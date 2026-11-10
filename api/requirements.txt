@@ -1,0 +1,18 @@
+# Runtime dependencies — dùng cho cả `pip install` local và Docker image.
+# Test-only deps nằm ở `requirements-dev.txt`.
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
+python-multipart==0.0.32
+pillow==12.3.0
+numpy==2.5.4
+# Detector Grounding DINO (Zero-Shot, Apache-2.0) qua Hugging Face transformers
+transformers>=4.48.0
+safetensors>=0.4.5
+torch==2.14.1
+torchvision==0.29.1
+# Nguồn catalog sản phẩm là PostgreSQL
+psycopg2-binary==2.9.13
+# HTTP client gọi Qwen-Image-Edit gateway
+httpx==0.28.1
