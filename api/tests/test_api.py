@@ -141,3 +141,22 @@ def test_reject_tiny_image(client: TestClient) -> None:
 def test_image_required(client: TestClient) -> None:
     r = client.post("/api/v1/recommendations/image")
     assert r.status_code == 422
+
+
+def test_cors_preflight_and_headers(client: TestClient) -> None:
+    # Preflight OPTIONS
+    r = client.options(
+        "/api/v1/recommendations/image",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "*"
+
+    # Simple GET request with Origin
+    r_get = client.get("/health/ready", headers={"Origin": "http://example.com"})
+    assert r_get.status_code == 200
+    assert r_get.headers.get("access-control-allow-origin") == "*"
