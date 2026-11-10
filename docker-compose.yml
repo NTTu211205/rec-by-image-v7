@@ -6,7 +6,7 @@
 # DB tự nạp 1.413 sản phẩm từ api/data/dienmayxanh_products.csv khi volume còn trống
 # (db/init/01_schema.sql dựng 3 bảng schema `mwg`, db/init/02_seed.sql nạp dữ liệu).
 # Cùng một network nên API gọi DB qua hostname `postgres`.
-name: recommend-by-image-v7
+name: recommend-by-image-v5
 
 services:
   postgres:
@@ -64,6 +64,7 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./api/app:/app/app:ro
+      - ./api/artifacts:/app/artifacts:ro
     environment:
       # Model Grounding DINO (Apache-2.0) + hai file ma trận bắt buộc:
       MODEL_PATH: IDEA-Research/grounding-dino-tiny

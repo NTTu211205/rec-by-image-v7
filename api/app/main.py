@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 
@@ -60,6 +61,15 @@ def create_app(settings: Settings | None = None, *, state: AppState | None = Non
         docs_url=None,
         redoc_url=None,
         openapi_url="/openapi.json" if docs else None,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
     )
 
     install_exception_handlers(app)

@@ -226,3 +226,24 @@ def test_convenience_functions() -> None:
     assert "Microwave Placement:" in p1
     assert "television" not in p1.lower()
     assert "tv" not in n1.lower()
+
+
+def test_prompt_length_limit() -> None:
+    builder = ImageEditPromptBuilder()
+    assert len(builder.default_prompt) < 2000
+    assert len(builder.default_prompt) <= 1700
+
+    # Test single product
+    for code in CATEGORY_RULES:
+        p = builder.build_prompt([{"group_code": code, "product_name": f"Product {code}"}])
+        assert len(p) < 2000, f"Exceeded 2000 chars for {code}: {len(p)}"
+        assert len(p) <= 1700, f"Exceeded 1700 chars for {code}: {len(p)}"
+
+    # Test pair with longest text (kettle + tv, soy_milk_maker + tv)
+    p_long = builder.build_prompt([
+        {"group_code": "soy_milk_maker", "product_name": "Máy làm sữa hạt đa năng Tefal Ultra Blend High Speed"},
+        {"group_code": "tv", "product_name": "Smart Tivi Neo QLED 8K 85 inch Samsung QA85QN900C"}
+    ])
+    assert len(p_long) < 2000
+    assert len(p_long) <= 1700
+    assert len(p_long) > 0

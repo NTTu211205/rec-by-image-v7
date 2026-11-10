@@ -45,7 +45,7 @@ Bảng ánh xạ `CLASS_PROMPTS` trong `app/services/detector.py` định nghĩa
 | Cell 10.2 | Ánh xạ `GROUP_TO_DETECTOR` | `app/services/recommender.py` |
 | Cell 10.3 | `build_cooccurrence_matrix` | `app/services/cooccurrence.py` |
 | Cell 10.4 | Ước lượng xác suất $P(e \mid d)$ | `Recommender.p_smoothed` |
-| Cell 10.5 | Lưu `cooccurrence_matrix.json` | `scripts/build_artifacts.py` |
+| Cell 10.5 | Lưu `cooccurrence_matrix.json` | `artifacts/matrix/cooccurrence_matrix.json` (Artifact tĩnh) |
 | Cell 10.6 | Bảng điểm phòng $W(c, r)$ | `app/services/room_scores.py` |
 | Cell 10.7 | Hàm tra cứu trọng số $W$ | `Recommender.w` |
 | Cell 10.8 | Nạp Catalog | `app/services/product_catalog.py` (Chỉ đọc PostgreSQL) |

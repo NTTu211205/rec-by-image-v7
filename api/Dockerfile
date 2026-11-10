@@ -44,7 +44,6 @@ RUN useradd --create-home --uid 1000 app \
 
 # Chỉ copy những gì runtime cần (test/dev nằm trong .dockerignore).
 COPY app ./app
-COPY scripts ./scripts
 COPY artifacts ./artifacts
 
 USER app

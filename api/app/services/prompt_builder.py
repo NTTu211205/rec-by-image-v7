@@ -36,10 +36,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 1. Bếp gas
     "gas_stove": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the gas stove resting flat and stable on an existing kitchen counter "
-            "or existing surface in picture 1. Do NOT add or invent any new tables, counters, or cabinets."
+            "- Picture {index} ({pname}): Place the gas stove resting flat on an existing kitchen counter in picture 1. "
+            "Do NOT add or invent any new tables, counters, or cabinets."
         ),
-        rule="Gas Stove Placement: Must sit flat on an existing counter surface in picture 1. Never place on the floor, in mid-air, and do not add new furniture.",
+        rule="Gas Stove Placement: Must sit flat on an existing counter surface in picture 1. Never on floor.",
         negative_terms=("gas stove on floor", "floating gas stove", "wall mounted stove", "extra table"),
         aliases=("gas_stove", "bếp gas", "bep gas", "gas stove"),
     ),
@@ -66,10 +66,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 4. Tủ lạnh
     "refrigerator": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the refrigerator standing upright firmly on the existing floor against the wall in picture 1. "
-            "Do NOT place on tables or counters, and do NOT float in air."
+            "- Picture {index} ({pname}): Place the refrigerator standing upright on the existing floor against the wall in picture 1. "
+            "Do NOT place on tables or counters, and do not float."
         ),
-        rule="Refrigerator Placement: The refrigerator must stand upright with its base flat on the existing floor against the wall. Never float or place on furniture.",
+        rule="Refrigerator Placement: Stand upright flat on floor against wall. Never float or place on furniture.",
         negative_terms=("floating refrigerator", "refrigerator on table", "refrigerator on counter", "tilted refrigerator"),
         aliases=("refrigerator", "tủ lạnh", "tu lanh", "fridge"),
     ),
@@ -77,9 +77,9 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     "oven": CategoryRuleConfig(
         directive_template=(
             "- Picture {index} ({pname}): Place the electric oven resting stably on an existing counter or existing shelf in picture 1. "
-            "Realistic countertop appliance dimensions (~35cm tall, ~50cm wide). Do NOT place on the floor. Do NOT add any new tables or cabinets."
+            "Countertop scale (~35cm tall, ~50cm wide). Do NOT place on floor. Do NOT add any new tables or cabinets."
         ),
-        rule="Oven Placement: Must rest flat on an existing counter or shelf surface. Never place on the floor and do not invent new furniture.",
+        rule="Oven Placement: Must rest flat on an existing counter or shelf surface. Never place on floor or invent new furniture.",
         negative_terms=("oven on floor", "floating oven", "extra table", "giant oven", "oversized oven"),
         aliases=("oven", "lò nướng", "lo nuong", "electric oven"),
     ),
@@ -87,7 +87,7 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     "microwave": CategoryRuleConfig(
         directive_template=(
             "- Picture {index} ({pname}): Place the microwave oven resting flat on an existing counter or existing shelf in picture 1. "
-            "Realistic countertop microwave dimensions (~30cm tall, ~50cm wide). Do NOT add any new tables or cabinets."
+            "Countertop scale (~30cm tall, ~50cm wide). Do NOT add any new tables or cabinets."
         ),
         rule="Microwave Placement: Must sit flat on an existing counter or shelf, never on the floor and do not add new tables.",
         negative_terms=("microwave on floor", "floating microwave", "extra table", "giant microwave", "oversized microwave"),
@@ -97,10 +97,9 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     "air_conditioner": CategoryRuleConfig(
         directive_template=(
             "- Picture {index} ({pname}): Mount high on the existing upper wall plane near the ceiling in picture 1. "
-            "The air conditioner MUST be installed high up on the wall; it MUST NEVER be placed on the floor, on shelves, on cabinets, or on the TV console shelf. "
-            "Do NOT modify the wall or ceiling."
+            "NEVER on floor, shelves, cabinets, or console. Do NOT modify the wall or ceiling."
         ),
-        rule="Air Conditioner Placement: Mount high on the existing upper wall plane near the ceiling. Must be mounted high on the wall. Keep the wall structure unchanged.",
+        rule="Air Conditioner Placement: Mount high on the existing upper wall plane near the ceiling. Keep wall unchanged.",
         negative_terms=(
             "air conditioner on floor",
             "air conditioner on shelf",
@@ -125,8 +124,8 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 9. Nồi chiên không dầu
     "air_fryer": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one compact air fryer resting flat on an existing counter or shelf in picture 1. "
-            "Realistic small tabletop scale (~30cm tall). MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact air fryer resting flat on an existing counter or shelf in picture 1. "
+            "Small tabletop scale (~30cm tall). Never place on floor; do NOT add new tables."
         ),
         rule="Air Fryer Placement: Must rest flat on an existing counter or shelf surface. Never place on the floor.",
         negative_terms=("air fryer on floor", "floating air fryer", "extra table", "giant air fryer", "oversized air fryer"),
@@ -153,8 +152,8 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 12. Máy xay sinh tố
     "blender": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one compact blender resting upright flat on an existing counter or shelf in picture 1. "
-            "Realistic small tabletop scale (~30cm tall, occupying a small footprint on the counter). MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact blender resting upright flat on an existing counter or shelf in picture 1. "
+            "Small tabletop scale (~30cm tall). Never place on floor; do NOT add new tables."
         ),
         rule="Blender Placement: Must rest upright on an existing counter or shelf surface. Never place on the floor.",
         negative_terms=("blender on floor", "floating blender", "extra table", "giant blender", "oversized blender"),
@@ -191,10 +190,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 16. Máy pha cà phê
     "coffee_maker": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one compact coffee maker resting upright flat on an existing counter, desk, or shelf in picture 1. "
-            "Realistic small tabletop scale (~25-30cm tall). MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact coffee maker resting upright flat on an existing counter, desk, or shelf in picture 1. "
+            "Small tabletop scale (~25-30cm tall). Never place on floor; do NOT add new tables."
         ),
-        rule="Coffee Maker Placement: Must rest upright on an existing surface. Never place on the floor, and do not invent new furniture.",
+        rule="Coffee Maker Placement: Must rest upright on an existing surface. Never place on floor or invent new furniture.",
         negative_terms=("coffee maker on floor", "floating coffee maker", "extra table", "giant coffee maker", "oversized coffee maker"),
         aliases=("coffee_maker", "máy pha cà phê", "may pha ca phe", "coffee maker"),
     ),
@@ -336,8 +335,8 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 31. Máy ép trái cây
     "juicer": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one compact juicer resting upright flat on an existing kitchen counter or shelf in picture 1. "
-            "Realistic small tabletop scale (~30cm tall). MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact juicer resting upright flat on an existing counter or shelf in picture 1. "
+            "Small tabletop scale (~30cm tall). Never place on floor; do NOT add new tables."
         ),
         rule="Juicer Placement: Must rest upright on an existing counter or shelf. Never place on the floor.",
         negative_terms=("juicer on floor", "floating juicer", "extra table", "giant juicer", "oversized juicer"),
@@ -355,11 +354,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 33. Ấm đun nước
     "kettle": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one small compact electric kettle resting flat on top of an existing counter or table in picture 1. "
-            "Scale it genuinely small: a petite tabletop item (~20cm tall, similar in scale to a small tea kettle or mug, occupying only a tiny footprint on the counter). "
-            "It must appear petite and realistic on the counter, much smaller than the window or cabinets. MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact electric kettle resting flat on an existing counter or table in picture 1. "
+            "Small tabletop scale (~20cm tall, tiny footprint). Never place on floor; do NOT add new tables."
         ),
-        rule="Kettle Placement & Scale: Must rest on its base flat on an existing surface at realistic compact size (~20cm tall). Never make it giant or oversized, never place on the floor.",
+        rule="Kettle Placement & Scale: Must rest on its base flat on an existing surface at realistic compact size (~20cm tall). Never on floor.",
         negative_terms=(
             "tall kettle",
             "tall pitcher",
@@ -474,10 +472,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 44. Máy chiếu
     "projector": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the compact projector resting flat on the existing TV console shelf, existing shelf, or existing floor in picture 1. "
-            "Realistic compact device scale (~20-30cm wide). Do NOT place giant in the foreground and do NOT add, draw, or invent any new tables, desks, or stands."
+            "- Picture {index} ({pname}): Place compact projector flat on existing console shelf, shelf, or floor in picture 1 (~20-30cm wide). "
+            "Do NOT place in foreground; do NOT add new tables or stands."
         ),
-        rule="Projector Placement: Must rest on an existing shelf, console, or floor in picture 1. Never add new tables or furniture.",
+        rule="Projector Placement: Must rest on existing shelf, console, or floor. Do not add new tables.",
         negative_terms=(
             "floating projector",
             "extra table",
@@ -502,8 +500,8 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 46. Nồi cơm điện
     "rice_cooker": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one compact rice cooker resting flat on an existing kitchen counter or shelf in picture 1. "
-            "Realistic small tabletop scale (~20-25cm tall). MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact rice cooker resting flat on an existing kitchen counter or shelf in picture 1. "
+            "Small tabletop scale (~20-25cm tall). Never place on floor; do NOT add new tables."
         ),
         rule="Rice Cooker Placement: Must rest flat on an existing counter or shelf in picture 1. Never place on the floor.",
         negative_terms=("rice cooker on floor", "floating rice cooker", "extra table", "giant rice cooker", "oversized rice cooker"),
@@ -540,11 +538,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 50. Máy làm sữa hạt
     "soy_milk_maker": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place exactly one small compact countertop appliance resting flat on top of an existing counter or island in picture 1. "
-            "Scale it genuinely small and compact: a small kitchen pitcher (~20cm tall, similar in scale to a small electric kettle or coffee mug, occupying only a tiny spot on the counter). "
-            "It must appear petite and realistic on the counter, much smaller than the window or cabinets. MUST NEVER be placed on the floor, and do NOT add any new tables."
+            "- Picture {index} ({pname}): Place one compact appliance resting flat on an existing counter or island in picture 1. "
+            "Small tabletop scale (~20cm tall, tiny footprint). Never place on floor; do NOT add new tables."
         ),
-        rule="Soy Milk Maker Placement & Scale: Must rest flat on an existing counter or island surface at realistic small tabletop size (~20cm tall). Never place on the floor, never make oversized or tall.",
+        rule="Soy Milk Maker Placement: Must rest flat on existing counter/island at compact scale (~20cm tall). Never on floor.",
         negative_terms=(
             "tall kettle",
             "tall pitcher",
@@ -610,13 +607,11 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     "tv": CategoryRuleConfig(
         directive_template=(
             "- Picture {index} ({pname}): Place the television standing directly on top of the existing TV console shelf or cabinet in picture 1, "
-            "resting its feet flat on the cabinet surface with zero gap. The television MUST NOT be mounted or hung on the wall if it has stand feet; "
-            "its stand feet must touch and rest firmly on the shelf underneath it. Do NOT add any new cabinet or furniture."
+            "feet flat with zero gap. The television MUST NOT be mounted or hung on the wall; stand feet must touch shelf. Do NOT add new furniture."
         ),
         rule=(
-            "Television Placement: The television MUST rest firmly on top of the existing TV console shelf/cabinet. "
-            "Do not hang or mount it on the wall if it has a stand/legs; its feet must touch the cabinet surface with zero gap under the feet. "
-            "Do not add any new TV cabinet or furniture."
+            "Television Placement: Must rest flat on top of existing TV console shelf/cabinet with zero gap under feet. "
+            "Do not hang on wall or add new furniture."
         ),
         negative_terms=(
             "wall mounted TV with legs",
@@ -652,11 +647,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 59. Cây nước nóng lạnh
     "water_dispenser": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the slim water dispenser standing upright flat on the floor tucked at the far side or corner against the wall in picture 1. "
-            "Scale it to realistic counter-level height (~90cm - 1 meter tall, top surface level with kitchen counters, NEVER taller than upper cabinets). "
-            "It must NOT stand in the middle walkway, in the foreground, or in front of the island."
+            "- Picture {index} ({pname}): Place slim water dispenser standing upright flat on the floor against the wall in picture 1. "
+            "Scale to counter height (~90cm-1m tall). Do NOT place in walkway or foreground."
         ),
-        rule="Water Dispenser Placement & Scale: Must stand upright with its base flat on the existing floor against the wall. Never block walkways or foreground. Keep realistic counter-level height (~90cm-1m).",
+        rule="Water Dispenser Placement: Stand upright flat on existing floor against wall. Do NOT block walkway or foreground.",
         negative_terms=(
             "water purifier in walkway",
             "water purifier in foreground",
@@ -693,11 +687,10 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 62. Máy lọc nước
     "water_purifier": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the slim floor-standing water purifier standing upright flat on the floor tucked at the far left edge or corner against the wall in picture 1. "
-            "Scale it to standard counter-level height (~90cm - 1 meter tall, top surface level with or slightly below kitchen counters, NEVER taller than upper cabinets). "
-            "It must NOT stand in the middle walkway, in the foreground, or in front of the island."
+            "- Picture {index} ({pname}): Place slim floor-standing water purifier standing upright flat on the floor against the wall in picture 1. "
+            "Scale to counter height (~90cm-1m tall). Do NOT place in walkway or foreground."
         ),
-        rule="Water Purifier Placement & Scale: Must stand upright flat on the floor tucked against the wall or corner. Do NOT place in open walkways or foreground. Keep realistic counter-level height (~90cm-1m).",
+        rule="Water Purifier Placement: Stand upright on floor against wall or corner. Do NOT block walkway or foreground.",
         negative_terms=(
             "water purifier in walkway",
             "water purifier in foreground",
@@ -716,68 +709,26 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
 class ImageEditPromptBuilder:
     """Class chuyên biệt xây dựng prompt và negative prompt theo từng sản phẩm cho Qwen Image Edit."""
 
+    MAX_PROMPT_CHARS: int = 1700
+    MAX_NEGATIVE_PROMPT_CHARS: int = 1700
+
     UNIVERSAL_RULES: tuple[str, ...] = (
-        "Room Structure & Background Preservation (CRITICAL): Keep the original room in Picture 1 100% unchanged. "
-        "Do NOT modify, reconstruct, renovate, or replace the walls, floor, ceiling, doors, windows, lighting, camera angle, perspective, or existing furniture in Picture 1.",
-        "Zero Invented Furniture or Items (STRICT): Do NOT introduce, invent, or add ANY new tables, desks, chairs, cabinets, lamps, boxes, or decorations not provided in the reference pictures. "
-        "Place products strictly in their intended locations: tabletop items on existing counters/desks/shelves, floor appliances on the existing floor against walls (do not block walkways), and wall-mounted appliances high on the upper wall plane near the ceiling. Never place wall-mounted appliances on tables or shelves.",
-        "Realistic Physical Scale & Proportions (CRITICAL): Scale every product accurately according to real-world human-scale dimensions and room depth perspective. "
-        "Small countertop appliances (kettles, blenders, soy milk makers, rice cookers, air fryers, toasters, irons, etc.) are small compact tabletop items (~20-25cm tall) occupying only a tiny footprint on existing counters; they must NEVER appear giant, oversized, or taller than kitchen cabinets. "
-        "Floor-standing units (water purifiers, dispensers) must be slim and match standard counter height (~90cm-1m tall), placed tucked against existing walls without blocking walkways. Major appliances (refrigerators, washing machines) must match standard life-size height (~1.4m-1.9m). "
-        "Wall-mounted units must be installed high on the upper wall plane near the ceiling. Each product must appear at its true physical scale, never magnified or distorted.",
-        "Clear Foreground & Single Instance: The foreground floor must remain completely clear and empty. Do NOT place any products in the foreground close to the camera. Place each provided reference product exactly once; do NOT duplicate or repeat products.",
+        "Room Structure & Background Preservation: Keep original room in picture 1 100% unchanged (walls, floor, ceiling, windows, furniture).",
+        "Zero Invented Furniture or Items: Do NOT add new tables, desks, cabinets, or decor. Place only on existing surfaces.",
+        "Realistic Physical Scale: Match real-world size and room depth. Countertop items stay compact. Never magnify.",
+        "Clear Foreground: Foreground floor must stay empty. Do not place near camera or duplicate items.",
     )
 
     BASE_NEGATIVE_TERMS: tuple[str, ...] = (
-        "tall kettle",
-        "tall pitcher",
-        "tall appliance on counter",
-        "oversized pitcher",
-        "large jug",
-        "large kettle",
-        "giant water purifier",
-        "oversized water purifier",
-        "water purifier taller than counter",
-        "water purifier in walkway",
-        "water purifier in foreground",
-        "water purifier in front of island",
-        "blocking walkway",
-        "middle of room",
-        "giant kettle",
-        "oversized kettle",
-        "giant appliance",
-        "oversized countertop appliance",
-        "huge appliance",
-        "oversized on counter",
-        "giant on counter",
-        "sitting on floor",
-        "placed on floor",
-        "on the floor",
-        "small appliance on floor",
-        "kettle on floor",
-        "cooker on floor",
-        "soy milk maker on floor",
-        "appliance on floor",
-        "giant appliance in foreground",
-        "oversized in foreground",
-        "in front of island",
-        "cut into cabinets",
-        "cut into island",
-        "embedded in counter",
-        "embedded in island",
-        "duplicate products",
-        "multiple appliances",
-        "repeated products",
-        "extra boxes",
-        "pedestals",
-        "stands under products",
-        "black box on floor",
+        "floating objects",
+        "floating in mid-air",
+        "floating above surface",
+        "unanchored object",
         "changing room",
         "altering room structure",
         "altering walls",
         "different floor",
         "different ceiling",
-        "different walls",
         "extra furniture",
         "extra tables",
         "extra desks",
@@ -786,28 +737,31 @@ class ImageEditPromptBuilder:
         "new furniture",
         "invented objects",
         "unrequested decorations",
-        "promotional banner",
-        "advertisement ribbon",
-        "text overlay",
-        "watermark",
-        "foreground placement",
+        "duplicate products",
+        "multiple appliances",
+        "repeated products",
+        "extra boxes",
+        "pedestals",
+        "stands under products",
+        "black box on floor",
+        "cut into cabinets",
+        "embedded in counter",
+        "misaligned with wall",
+        "misaligned with floor",
+        "wrong surface",
         "in foreground",
-        "in the foreground",
         "near camera",
-        "close to camera",
+        "blocking foreground",
+        "blocking walkway",
+        "middle of room",
         "oversized products",
         "huge objects",
         "wrong scale",
-        "unrealistic dimensions",
         "distorted scale",
-        "blocking foreground",
-        "air conditioner on shelf",
-        "air conditioner on cabinet",
-        "air conditioner on table",
-        "air conditioner on console",
-        "low mounted air conditioner",
-        "floating objects",
         "distorted products",
+        "text overlay",
+        "watermark",
+        "promotional banner",
         "low quality",
         "blurry",
     )
@@ -863,22 +817,27 @@ class ImageEditPromptBuilder:
             return self.default_prompt
 
         num_products = len(selected)
+        has_tv = any(
+            (p.get("group_code") == "tv")
+            or ("tv" in (p.get("product_name") or "").lower().split())
+            or ("tivi" in (p.get("product_name") or "").lower())
+            or ("television" in (p.get("product_name") or "").lower())
+            for p in selected
+        )
+        tv_surface_note = "; TV flat on console shelf" if has_tv else ""
+
         if num_products == 1:
             header = (
-                "Mount product in picture 2 to picture 1. Do not change room structure. "
-                "Keep the original room in picture 1 completely unchanged, including walls, floor, ceiling, doors, windows, camera perspective, lighting, and all existing furniture. "
-                "Strictly do not add any extra tables, desks, chairs, cabinets, lamps, decorations, or unrequested furniture. "
-                "The foreground floor must remain completely clear and empty. Do NOT place any products in the foreground near the camera. "
-                "Scale every product realistically according to real-world human-scale physical dimensions and room depth perspective. Place ONLY the exact product provided."
+                "Mount product in picture 2 to picture 1. Do not change room structure.\n"
+                "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
+                f"2. Anchored Placement: Mount product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float."
             )
         else:
             refs = " and ".join(f"picture {i}" for i in range(2, num_products + 2))
             header = (
-                f"Mount products in {refs} to picture 1. Do not change room structure. "
-                "Keep the original room in picture 1 completely unchanged, including walls, floor, ceiling, doors, windows, camera perspective, lighting, and all existing furniture. "
-                "Strictly do not add any extra tables, desks, chairs, cabinets, lamps, decorations, or unrequested furniture. "
-                "The foreground floor must remain completely clear and empty. Do NOT place any products in the foreground near the camera. "
-                "Scale every product realistically according to real-world human-scale physical dimensions and room depth perspective. Place ONLY the exact products provided."
+                f"Mount products in {refs} to picture 1. Do not change room structure.\n"
+                "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
+                f"2. Anchored Placement: Mount each product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float."
             )
 
         specs: list[ProductPlacementSpec] = [
@@ -906,12 +865,15 @@ class ImageEditPromptBuilder:
             rule_num += 1
 
         rules_block = "\n".join(rules)
-        return (
+        full_prompt = (
             f"{header}\n\n"
             f"{items_block}\n\n"
-            f"**STRICT INSTRUCTIONS & ROOM PRESERVATION**\n"
+            f"**RULES & PRESERVATION**\n"
             f"{rules_block}"
         )
+        if len(full_prompt) > self.MAX_PROMPT_CHARS:
+            full_prompt = full_prompt[:self.MAX_PROMPT_CHARS].rstrip()
+        return full_prompt
 
     def build_negative_prompt(
         self, products: list[dict[str, Any]], max_products: int = 2
@@ -937,31 +899,43 @@ class ImageEditPromptBuilder:
                 seen.add(term)
                 specific_neg.append(term)
 
-        return ", ".join(specific_neg)
+        full_neg = ", ".join(specific_neg)
+        if len(full_neg) > self.MAX_NEGATIVE_PROMPT_CHARS:
+            truncated = full_neg[:self.MAX_NEGATIVE_PROMPT_CHARS]
+            if "," in truncated:
+                full_neg = truncated.rsplit(",", 1)[0].rstrip()
+            else:
+                full_neg = truncated.rstrip()
+        return full_neg
 
     @property
     def default_prompt(self) -> str:
         """Prompt mặc định dự phòng tổng quát khi danh sách sản phẩm rỗng."""
-        return (
-            "Mount products in picture 2 and picture 3 to picture 1. Do not change room structure. "
-            "Keep the original room in picture 1 completely unchanged, including walls, floor, ceiling, doors, windows, camera perspective, and all existing furniture. "
-            "Strictly do not add any extra tables, desks, chairs, cabinets, lamps, decorations, or unrequested furniture. "
-            "Scale every product realistically according to real-world physical dimensions.\n\n"
+        u_rules = "\n".join(f"{i+2}. {rule}" for i, rule in enumerate(self.UNIVERSAL_RULES))
+        prompt = (
+            "Mount products in picture 2 and picture 3 to picture 1. Do not change room structure.\n"
+            "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
+            "2. Anchored Placement: Place each product on matching surface (wall units high near ceiling; tabletop on counters; floor units on floor). Never float.\n\n"
             "- Picture 2, Picture 3: Product reference images to place inside picture 1.\n\n"
-            "**STRICT INSTRUCTIONS & ROOM PRESERVATION**\n"
-            "1. Product Placement: Place each product from the reference pictures into picture 1 according to its realistic physical function "
-            "(floor-standing on the existing floor against walls, tabletop on existing surfaces, wall-mounted high on the existing wall plane). "
-            "If a product has a stand/base/legs, place it resting on its stand, never floating. Do NOT add new tables or furniture.\n"
-            f"2. {self.UNIVERSAL_RULES[0]}\n"
-            f"3. {self.UNIVERSAL_RULES[1]}\n"
-            f"4. {self.UNIVERSAL_RULES[2]}\n"
-            f"5. {self.UNIVERSAL_RULES[3]}"
+            "**RULES & PRESERVATION**\n"
+            "1. Product Placement: Place each product according to realistic function. Never float. Do NOT add new tables.\n"
+            f"{u_rules}"
         )
+        if len(prompt) > self.MAX_PROMPT_CHARS:
+            prompt = prompt[:self.MAX_PROMPT_CHARS].rstrip()
+        return prompt
 
     @property
     def default_negative_prompt(self) -> str:
         """Negative prompt mặc định tổng quát."""
-        return ", ".join(self.BASE_NEGATIVE_TERMS)
+        neg = ", ".join(self.BASE_NEGATIVE_TERMS)
+        if len(neg) > self.MAX_NEGATIVE_PROMPT_CHARS:
+            truncated = neg[:self.MAX_NEGATIVE_PROMPT_CHARS]
+            if "," in truncated:
+                neg = truncated.rsplit(",", 1)[0].rstrip()
+            else:
+                neg = truncated.rstrip()
+        return neg
 
 
 # Instance mặc định dùng chung
