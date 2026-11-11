@@ -14,7 +14,7 @@ from app.api.openapi import ERROR_CONTENT
 from app.schemas.recommendation import RecommendationResponse
 from app.services import group_scores
 from app.services.images import load_image_bytes
-from app.services.qwen_image_edit import GROUP_PLACEMENT_PROFILES, QwenImageEditClient
+from app.services.qwen_image_edit import QwenImageEditClient
 
 logger = logging.getLogger("app.routes.recommendations")
 router = APIRouter(prefix="/api/v1", tags=["recommendations"])
@@ -71,7 +71,10 @@ async def recommend_from_image(
     ),
     room_type: str | None = Query(
         None,
-        description="Mã phòng; bỏ trống → `DEFAULT_ROOM_TYPE`.",
+        description=(
+            "Mã phòng; bỏ trống → detect tất cả nhãn Grounding DINO và dùng "
+            "`DEFAULT_ROOM_TYPE` để xếp hạng gợi ý."
+        ),
         examples=["living_room"],
     ),
     room_type_form: str | None = Form(
@@ -124,7 +127,11 @@ async def recommend_from_image(
     if not state.ready:
         raise ModelNotReadyError("Model chưa sẵn sàng.")
 
-    room = _validate_room(room_type or room_type_form, state)
+    requested_room = room_type or room_type_form
+    # Không có room_type: detector chạy toàn bộ nhãn, rồi suy luận phòng từ
+    # các vật thể phát hiện được trước khi xếp hạng sản phẩm.
+    detection_room = requested_room or None
+    provided_room = _validate_room(requested_room, state) if requested_room else None
     category = _validate_category(category_id)
     if top_k is not None and not (1 <= top_k <= TOP_K_MAX):
         raise NotFoundError(f"top_k phải trong [1, {TOP_K_MAX}].")
@@ -146,8 +153,16 @@ async def recommend_from_image(
             state.detector.detect,
             img,
             confidence if confidence is not None else settings.model_confidence,
-            room,
+            detection_room,
         )
+        if provided_room is None:
+            room, room_detection_scores = state.recommender.infer_room_type(detected)
+            room_type_source = "inferred" if any(room_detection_scores.values()) else "default"
+        else:
+            room = provided_room
+            room_detection_scores = None
+            room_type_source = "provided"
+
         result = state.recommender.recommend(
             detected,
             room_type=room,
@@ -160,6 +175,8 @@ async def recommend_from_image(
             price_range=_price_range(min_price, max_price),
             category_id=category,
         )
+        result["room_type_source"] = room_type_source
+        result["room_detection_scores"] = room_detection_scores
     finally:
         state.release()
 
@@ -177,15 +194,10 @@ async def recommend_from_image(
             if products:
                 p = products[0]
                 if p.get("image_url"):
-                    profile = GROUP_PLACEMENT_PROFILES.get(
-                        r.get("group_code", ""),
-                        ("other", p.get("product_name", "product"), "in the room"),
-                    )
                     candidate_products.append({
                         "product_id": p.get("product_id"),
-                        "product_name": p.get("product_name") or profile[1],
+                        "product_name": p.get("product_name"),
                         "image_url": p.get("image_url"),
-                        "placement": profile[2],
                         "group_code": r.get("group_code"),
                         "category_id": r.get("category_id"),
                     })

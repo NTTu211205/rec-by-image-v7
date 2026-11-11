@@ -29,7 +29,7 @@ MATRIX_PATH = ARTIFACTS / "cooccurrence_matrix.json"
 # 1.413 sản phẩm / 62 nhóm / 157 brand — số liệu cố định của catalog hiện tại.
 EXPECTED_PRODUCTS = 1413
 EXPECTED_GROUPS = 62
-EXPECTED_ROOMS = 7
+EXPECTED_ROOMS = 3
 
 
 def _db_config() -> dict:
@@ -77,14 +77,18 @@ def test_scores_json_matches_known_values() -> None:
     """Giá trị cụ thể để phát hiện file bị ghi đè nhầm."""
     table = load_room_scores(SCORES_PATH)
     assert table.by_name["TV"]["living_room"] == 1.0
-    assert table.by_name["TV"]["bathroom"] == 0.0
-    assert table.by_name["Loa"]["living_room"] in (0.8, 1.0)
+    assert table.by_name["TV"]["bedroom"] == 0.9
+    assert table.by_name["Máy điều hòa"]["living_room"] == 0.98
+    assert table.by_name["Loa"]["living_room"] == 0.96
+    assert table.by_name["Máy lọc không khí"]["living_room"] == 0.94
+    assert table.by_name["Quạt điện"]["living_room"] == 0.92
+    assert table.by_name["Loa karaoke"]["living_room"] == 0.5
     assert table.by_name["Tủ lạnh"]["kitchen"] == 1.0
 
 
 def test_room_codes_count() -> None:
     assert len(ROOM_CODES) == EXPECTED_ROOMS
-    assert "living_room" in ROOM_CODES
+    assert set(ROOM_CODES) == {"living_room", "bedroom", "kitchen"}
 
 
 def test_missing_scores_file_raises(tmp_path: Path) -> None:
@@ -102,7 +106,7 @@ def test_corrupt_scores_file_raises(tmp_path: Path) -> None:
 def test_scores_missing_room_raises(tmp_path: Path) -> None:
     bad = tmp_path / "thieu_phong.json"
     bad.write_text(json.dumps({"TV": {"living_room": 1.0}}), encoding="utf-8")
-    with pytest.raises(ArtifactError, match="không đúng 7 phòng"):
+    with pytest.raises(ArtifactError, match="không đúng 3 phòng"):
         load_room_scores(bad)
 
 
@@ -146,7 +150,14 @@ def test_matrix_loads() -> None:
 
 def test_checkpoint_classes_match_matrix() -> None:
     """Bộ class của Grounding DINO (`CLASS_PROMPTS`) phải bao phủ toàn bộ class ma trận."""
-    from app.services.detector import CLASS_PROMPTS, normalize_label, LIVING_ROOM_CLASSES, KITCHEN_CLASSES, ROOM_CLASSES
+    from app.services.detector import (
+        BEDROOM_CLASSES,
+        CLASS_PROMPTS,
+        KITCHEN_CLASSES,
+        LIVING_ROOM_CLASSES,
+        ROOM_CLASSES,
+        normalize_label,
+    )
 
     cooc = load_cooccurrence(MATRIX_PATH)
     assert set(cooc["classes"]).issubset(set(CLASS_PROMPTS.keys()))
@@ -158,9 +169,23 @@ def test_checkpoint_classes_match_matrix() -> None:
     # Kiểm tra tính toàn vẹn của các bộ prompt chuyên biệt theo phòng
     assert set(LIVING_ROOM_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
     assert set(KITCHEN_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
+    assert set(BEDROOM_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
     assert "Sofa" in LIVING_ROOM_CLASSES and "Sofa" not in KITCHEN_CLASSES
     assert "Refrigerator" in KITCHEN_CLASSES and "Gas Stove" in KITCHEN_CLASSES
     assert "Gas Stove" not in LIVING_ROOM_CLASSES
+    assert "Bed" in BEDROOM_CLASSES
+    assert "bedroom" in ROOM_CLASSES
+
+
+def test_default_detector_prompts_include_all_registered_labels() -> None:
+    """Không truyền room_type phải chọn prompt đầy đủ, không phải living room."""
+    from app.services.detector import CLASS_PROMPTS, Detector, build_chunked_prompts
+
+    detector = Detector(device="cpu")
+    assert detector.room_prompts["default"] == build_chunked_prompts(
+        list(CLASS_PROMPTS), chunk_size=25
+    )
+    assert len(detector.room_prompts["default"]) > len(detector.room_prompts["living_room"])
 
 
 # --- Metadata nhóm ----------------------------------------------------------

@@ -65,7 +65,7 @@ Bảng ánh xạ `CLASS_PROMPTS` trong `app/services/detector.py` định nghĩa
 | :--- | :--- | :--- |
 | `MODEL_PATH` | `IDEA-Research/grounding-dino-tiny` | Hugging Face Repo ID hoặc thư mục cache mô hình |
 | `COOCCURRENCE_MATRIX_PATH` | `artifacts/matrix/cooccurrence_matrix.json` | Ma trận đồng xuất hiện 45 class (1.717 ảnh train) |
-| `CATEGORY_ROOM_SCORES_PATH` | `artifacts/matrix/category_room_scores.json` | Ma trận điểm phòng 62 nhóm × 7 loại phòng |
+| `CATEGORY_ROOM_SCORES_PATH` | `artifacts/matrix/category_room_scores.json` | Ma trận điểm phòng 62 nhóm × 3 loại phòng |
 | `DB_HOST` / `DB_PORT` | `postgres` / `5432` | Địa chỉ PostgreSQL (host `postgres` trong Docker) |
 | `DB_SCHEMA` | `mwg` | Schema chứa 3 bảng (`product`, `categories`, `brand`) |
 | `DB_USER` / `DB_PASSWORD` | `mwg` / `mwg_secret` | Thông tin xác thực PostgreSQL |
@@ -134,7 +134,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/image?room_type=livin
 ```
 
 Các tham số tuỳ chọn:
-- `room_type`: 1 trong 7 phòng chuẩn (`living_room`, `bedroom`, `kitchen`, `dining_room`, `bathroom`, `home_office`, `balcony`).
+- `room_type`: 1 trong 3 phòng chuẩn (`living_room`, `bedroom`, `kitchen`).
 - `top_k`: Số nhóm sản phẩm gợi ý (mặc định 5).
 - `generate_image`: `true` để kích hoạt AI ghép sản phẩm vào ảnh phòng.
 - `edit_prompt`: Chuỗi prompt tùy biến nếu muốn ghi đè prompt mặc định.

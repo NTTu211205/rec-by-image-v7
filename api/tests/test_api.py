@@ -51,6 +51,8 @@ def test_recommend_image(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["room_type"] == "living_room"
+    assert body["room_type_source"] == "provided"
+    assert body["room_detection_scores"] is None
     assert "detected_objects" in body
     assert len(body["recommendations"]) <= 3
 
@@ -72,6 +74,10 @@ def test_recommend_image_defaults(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["room_type"] == "living_room"
+    assert body["room_type_source"] in {"inferred", "default"}
+    assert set(body["room_detection_scores"]) == {
+        "living_room", "bedroom", "kitchen"
+    }
     assert len(body["recommendations"]) <= 10
 
 
@@ -109,6 +115,16 @@ def test_invalid_room_type(client: TestClient) -> None:
     )
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.parametrize("room_type", ("bathroom", "dining_room", "home_office", "balcony"))
+def test_removed_room_types_are_rejected(client: TestClient, room_type: str) -> None:
+    r = client.post(
+        "/api/v1/recommendations/image",
+        files={"image": ("room.jpg", _jpeg(), "image/jpeg")},
+        params={"room_type": room_type},
+    )
+    assert r.status_code == 404
 
 
 def test_reject_non_image(client: TestClient) -> None:

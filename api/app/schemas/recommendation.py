@@ -30,6 +30,12 @@ _EXAMPLE_DETECTED = [
 
 _EXAMPLE_RESPONSE = {
     "room_type": "living_room",
+    "room_type_source": "inferred",
+    "room_detection_scores": {
+        "living_room": 4.16,
+        "bedroom": 0.0,
+        "kitchen": 0.0,
+    },
     "detected_objects": _EXAMPLE_DETECTED,
     "recommendations": [
         {
@@ -88,6 +94,14 @@ class RecommendationResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": _EXAMPLE_RESPONSE})
 
     room_type: str = Field(..., description="Phòng đã dùng.", examples=["living_room"])
+    room_type_source: str = Field(
+        ..., description="Nguồn xác định phòng: provided, inferred hoặc default.", examples=["inferred"]
+    )
+    room_detection_scores: dict[str, float] | None = Field(
+        None,
+        description="Điểm suy luận theo phòng khách, phòng ngủ và nhà bếp; null khi room_type được chỉ định.",
+        examples=[{"living_room": 3.2, "bedroom": 0.5, "kitchen": 0.0}],
+    )
     detected_objects: list[DetectedObject] = Field(
         ..., description="Vật thể đưa vào chấm điểm."
     )
@@ -124,7 +138,7 @@ class HealthResponse(BaseModel):
                 "model_family": "grounding_dino",
                 "detector_classes": 45,
                 "model_source": "IDEA-Research/grounding-dino-tiny (grounding_dino)",
-                "room_scores_source": "artifact category_room_scores.json (62 nhóm × 7 phòng) + mwg.categories",
+                "room_scores_source": "artifact category_room_scores.json (62 nhóm × 3 phòng) + mwg.categories",
                 "cooccurrence_source": "cooccurrence_matrix.json (45 class, 1692 ảnh train)",
                 "catalog_groups": 62,
                 "catalog_source": "PostgreSQL mwg.product (1413 sản phẩm)",

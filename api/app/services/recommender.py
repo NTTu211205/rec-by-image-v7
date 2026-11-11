@@ -106,6 +106,49 @@ DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "Water Dispenser": ["water_dispenser"],
 }
 
+# Tín hiệu bố cục có tính phân biệt phòng. Các nhãn chung như ``Chair`` chỉ có
+# trọng số thấp; các vật thể neo như ``Bed`` hoặc ``Refrigerator`` mới quyết
+# định mạnh loại phòng. Điểm cuối còn được bổ sung từ W(c, r) của category đã
+# detect, xem ``infer_room_type``.
+KITCHEN_ANCHOR_LABELS = frozenset({
+    "Refrigerator", "Freezer", "Beverage Cooler", "Gas Stove", "Induction Cooker",
+    "Infrared Cooker", "Microwave", "Oven", "Range Hood", "Dishwasher", "Rice Cooker",
+    "Air Fryer", "Kettle", "Blender", "Juicer", "Soy Milk Maker", "Coffee Maker",
+    "Water Purifier", "Water Dispenser",
+})
+
+ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
+    **{label: {"kitchen": 4.0} for label in KITCHEN_ANCHOR_LABELS},
+    "Bed": {"bedroom": 4.0},
+    "Pillow": {"bedroom": 1.5},
+    "Throw Blanket": {"bedroom": 1.5},
+    "Side Table": {"bedroom": 1.2},
+    "Sofa": {"living_room": 3.5},
+    "Coffee Table": {"living_room": 2.5},
+    "Entertainment Center": {"living_room": 2.0},
+    "TV": {"living_room": 1.7, "bedroom": 0.4},
+    "Speaker": {"living_room": 1.2},
+    "Fireplace": {"living_room": 2.5},
+    "Laptop": {"bedroom": 0.5},
+    "Monitor": {"bedroom": 0.4},
+    "Printer": {"bedroom": 0.3},
+    "Desk Lamp": {"bedroom": 0.5},
+    "Tableware": {"kitchen": 1.0},
+    "Mugs Teacups": {"kitchen": 0.8},
+    "Table": {"kitchen": 0.3},
+    "Chair": {"living_room": 0.15, "bedroom": 0.15},
+    "Cabinet": {"kitchen": 0.5, "bedroom": 0.2},
+    "Mirror": {"bedroom": 0.5},
+    "Rug": {"living_room": 0.4, "bedroom": 0.4},
+    "Plant": {"living_room": 0.2, "bedroom": 0.1},
+    "Planter": {"living_room": 0.2, "bedroom": 0.1},
+}
+
+# W(c, r) được học ở cấp category, nên là tín hiệu phụ trợ; không được phép
+# lấn át vật thể neo trong bố cục ảnh.
+CATALOG_ROOM_SCORE_WEIGHT = 0.75
+NO_SIGNAL_FALLBACK_ROOM = "living_room"
+
 # Nhóm không có detector tương ứng — P_cooc luôn 0, chỉ xếp theo W(c, r).
 GROUPS_WITHOUT_DETECTOR: frozenset[str] = frozenset(
     set(group_scores.GROUP_NAMES) - set(GROUP_TO_DETECTOR)
@@ -187,6 +230,56 @@ class Recommender:
     def w(self, group_code: str, room_type: str) -> float:
         """W(c, r) — đọc bảng điểm nạp từ `artifacts/matrix/category_room_scores.json`."""
         return float(self.room_scores.get(group_code, {}).get(room_type, 0.0))
+
+    def infer_room_type(
+        self, detected_objects: Sequence[dict[str, Any]],
+    ) -> tuple[str, dict[str, float]]:
+        """Chấm điểm 3 loại phòng từ các vật thể Grounding DINO đã detect.
+
+        Mỗi đóng góp được nhân với confidence của nhãn. Hàm trả về đầy đủ điểm
+        để API có thể giải thích quyết định, cùng room có điểm cao nhất. Nếu ảnh
+        không có nhãn mang tín hiệu phòng, giữ ``default_room_type``.
+        """
+        scores = {room: 0.0 for room in self.room_types}
+
+        for item in detected_objects:
+            label = str(item.get("label", ""))
+            try:
+                confidence = float(item.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                confidence = 0.0
+            confidence = max(0.0, min(1.0, confidence))
+            if confidence == 0.0:
+                continue
+
+            for room, weight in ROOM_LABEL_WEIGHTS.get(label, {}).items():
+                scores[room] += confidence * weight
+
+            # Các thiết bị có category tương ứng dùng thêm W(c, r), nhờ vậy
+            # điểm phòng đã huấn luyện được tham gia mà không cần hard-code
+            # toàn bộ danh mục vào bảng tín hiệu phía trên.
+            for group_code in DETECTOR_TO_GROUP.get(label, ()):
+                for room in scores:
+                    scores[room] += (
+                        confidence * CATALOG_ROOM_SCORE_WEIGHT * self.w(group_code, room)
+                    )
+
+        best_score = max(scores.values(), default=0.0)
+        has_room_signal = best_score > 0.0
+        room_type = (
+            max(self.room_types, key=lambda room: scores[room])
+            if has_room_signal
+            else NO_SIGNAL_FALLBACK_ROOM
+        )
+        rounded_scores = {room: round(score, 4) for room, score in scores.items()}
+        logger.info(
+            "Room type inferred: %s; source=%s; scores=%s; detected_labels=%s",
+            room_type,
+            "signals" if has_room_signal else "fallback_no_detected_objects",
+            rounded_scores,
+            [str(item.get("label", "")) for item in detected_objects],
+        )
+        return room_type, rounded_scores
 
     # ---- Tầng 3: P_cooc(c | D) ----
     def cooccurrence_score(

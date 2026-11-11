@@ -40,6 +40,7 @@ CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
     "Accent Chair": ("accent chair", "armchair"),
     "Air Conditioner": ("air conditioner",),
     "Basket/Bin": ("basket", "storage bin", "trash bin", "trash can", "garbage can"),
+    "Bed": ("bed", "bed frame", "headboard"),
     "Bench/Ottoman": ("bench", "ottoman"),
     "Books": ("books",),
     "Cabinet": ("cabinet", "dresser", "kitchen cabinet", "cupboard", "kitchen counter"),
@@ -206,21 +207,42 @@ KITCHEN_CLASSES: tuple[str, ...] = (
     # "Wall Art",
 )
 
+BEDROOM_CLASSES: tuple[str, ...] = (
+    # Vật thể neo bố cục phòng ngủ.
+    "Bed",
+    "Pillow",
+    "Throw Blanket",
+    "Side Table",
+    "Table Lamp",
+    "Desk Lamp",
+    "Floor Lamp",
+    "Mirror",
+    "Cabinet",
+    "Shelf",
+    "Rug",
+    "Curtain",
+    "Curtain Rod",
+    "Chair",
+    "Table",
+    "Books",
+    "Picture Frame",
+    "Wall Art",
+    "Decor",
+    "Plant",
+    "Planter",
+    "Organizer Storage",
+    "Laptop",
+    "Monitor",
+    "Air Conditioner",
+    "Fan",
+    "Light",
+)
+
 ROOM_CLASSES: dict[str, tuple[str, ...]] = {
     "living_room": LIVING_ROOM_CLASSES,
     "kitchen": KITCHEN_CLASSES,
+    "bedroom": BEDROOM_CLASSES,
 }
-
-ROOM_PROMPT_ALIAS: dict[str, str] = {
-    "living_room": "living_room",
-    "kitchen": "kitchen",
-    "dining_room": "kitchen",
-    "bedroom": "living_room",
-    "home_office": "living_room",
-    "bathroom": "living_room",
-    "balcony": "living_room",
-}
-
 
 def _clean_text(text: str) -> str:
     """Chuẩn hoá chuỗi nhãn: chữ thường, bỏ ký tự đặc biệt thừa, gộp khoảng trắng."""
@@ -426,8 +448,10 @@ class Detector:
         text_thresh = min(self.text_threshold, float(confidence))
         best: dict[str, dict] = {}
 
-        target_room = (room_type or "living_room").strip().lower()
-        resolved_room = ROOM_PROMPT_ALIAS.get(target_room, target_room)
+        # Khi caller không chỉ định phòng, dùng prompt `default` gồm toàn bộ
+        # CLASS_PROMPTS. Room cụ thể chỉ giới hạn nhãn khi nó được gửi rõ ràng.
+        target_room = room_type.strip().lower() if room_type else "default"
+        resolved_room = target_room
         prompts = (
             self.room_prompts.get(resolved_room)
             or self.room_prompts.get("default")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -23,6 +24,25 @@ ROOM_SCENE_ANALYSIS: dict[str, str] = {
         "Preserve their positions and use only a suitable existing floor area, tabletop, shelf, or wall plane."
     ),
 }
+
+# Nhãn category tiếng Anh được đưa vào prompt thay cho tên thương mại của sản phẩm.
+CATEGORY_PROMPT_NAMES: dict[str, str] = {
+    "tv": "television",
+    "desktop_pc": "desktop computer",
+    "led_bulb": "LED bulb",
+    "indoor_camera": "indoor security camera",
+    "outdoor_camera": "outdoor security camera",
+    "facial_cleanser": "facial cleansing device",
+    "soy_milk_maker": "soy milk maker",
+}
+
+
+def category_prompt_name(group_code: str) -> str:
+    """Trả category English an toàn để đưa vào prompt, không lộ tên sản phẩm."""
+    normalized = group_code.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]+", normalized):
+        return "product"
+    return CATEGORY_PROMPT_NAMES.get(normalized, normalized.replace("_", " "))
 
 
 @dataclass(frozen=True)
@@ -82,30 +102,29 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 4. Tủ lạnh
     "refrigerator": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the refrigerator upright on the existing floor against an existing wall in picture 1. "
-            "Position it in the left or right end bay of the existing kitchen cabinet run, with one refrigerator side flush and directly adjacent to the cabinet end panel, "
-            "and its back flush against the wall. Match the camera perspective, vanishing lines, and viewing angle of the adjacent cabinet faces: orient the refrigerator parallel to the nearest cabinet or wall plane, never artificially front-facing to the camera. "
-            "Partial occlusion by an existing cabinet end panel, counter edge, wall, or the image-frame edge is acceptable and preferred over moving or altering existing cabinetry; do not force the entire refrigerator to be visible. "
-            "Preserve a clear walkway and do not block the counter, sink, oven, or cabinet doors. Do NOT place it in the middle of the kitchen, on tables, or on counters."
+            "- Picture {index} ({pname}): Copy exactly one visible refrigerator from picture {index} into picture 1. "
+            "Place it upright only in an unobstructed empty floor area at the exposed outer end of the kitchen cabinets, back against an uninterrupted wall and side against the cabinet end panel. "
+            "If no full-width empty bay exists, use the least-obstructed outer image edge with natural partial cropping instead of covering any existing object. "
+            "Do not overlap, cover, or stand in front of any cabinet, counter, sink, oven, door, or existing appliance. The refrigerator must be visible in the final image. "
+            "Preserve every existing cabinet, counter, sink, oven, door, wall, and floor unchanged."
         ),
         rule=(
-            "Refrigerator Placement: Stand upright on the existing floor, back flush against an existing wall and one side directly adjacent to the end of the existing kitchen cabinets. "
-            "Match the adjacent cabinet perspective and allow natural partial occlusion by existing architecture or cabinetry; do not rotate it to face the camera. Keep it outside the walkway; never float or block cabinets."
+            "Refrigerator Placement: Copy one visible refrigerator from its reference image only onto an unobstructed empty floor area at an outer cabinet end. "
+            "Never overlap or stand in front of existing furniture, cabinets, counters, or doors; keep the room unchanged and match the cabinet perspective."
         ),
         negative_terms=(
-            "floating refrigerator",
-            "refrigerator on table",
-            "refrigerator on counter",
-            "tilted refrigerator",
-            "mini refrigerator on counter",
-            "refrigerator in middle of kitchen",
-            "refrigerator blocking walkway",
-            "refrigerator blocking cabinet doors",
-            "refrigerator blocking sink",
-            "refrigerator away from wall",
-            "refrigerator front facing camera",
-            "refrigerator wrong perspective",
-            "refrigerator forced fully visible",
+            # Không nêu từ "refrigerator" trong negative prompt: nhiều model
+            # image-edit sẽ triệt tiêu luôn vật thể được nhắc trong negative.
+            "floating appliance",
+            "appliance on counter",
+            "appliance on table",
+            "tilted appliance",
+            "appliance blocking walkway",
+            "appliance blocking cabinet doors",
+            "appliance blocking sink",
+            "appliance away from wall",
+            "appliance replacing cabinets",
+            "appliance covering cabinets",
         ),
         aliases=("refrigerator", "tủ lạnh", "tu lanh", "fridge"),
     ),
@@ -490,7 +509,7 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 42. Camera ngoài trời
     "outdoor_camera": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount securely onto the existing wall or balcony plane in picture 1."
+            "- Picture {index} ({pname}): Mount securely onto an existing wall plane in picture 1."
         ),
         rule="Outdoor Camera Placement: Must be mounted firmly to the existing wall plane.",
         negative_terms=("outdoor camera on floor", "floating camera"),
@@ -577,9 +596,9 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 49. Đèn năng lượng mặt trời
     "solar_light": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount on the existing exterior wall or balcony railing in picture 1."
+            "- Picture {index} ({pname}): Mount securely on an existing wall plane in picture 1."
         ),
-        rule="Solar Light Placement: Must be mounted securely to the existing wall or railing.",
+        rule="Solar Light Placement: Must be mounted securely to an existing wall plane.",
         negative_terms=("solar light on floor",),
         aliases=("solar_light", "đèn năng lượng mặt trời", "den nang luong mat troi"),
     ),
@@ -719,17 +738,17 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
             "- Picture {index} ({pname}): Place the compact water flosser standing upright on an existing vanity counter or shelf in picture 1. "
             "Realistic small handheld scale (~20-25cm tall)."
         ),
-        rule="Water Flosser Placement: Must stand upright on an existing bathroom counter or shelf.",
+        rule="Water Flosser Placement: Must stand upright on an existing counter or shelf.",
         negative_terms=("floating water flosser", "giant water flosser", "oversized water flosser"),
         aliases=("water_flosser", "máy tăm nước", "may tam nuoc"),
     ),
     # 61. Máy nước nóng
     "water_heater": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount securely onto the existing bathroom wall plane at realistic installation height in picture 1. "
+            "- Picture {index} ({pname}): Mount securely onto an existing wall plane at realistic installation height in picture 1. "
             "Do NOT modify the wall or place on the floor."
         ),
-        rule="Water Heater Placement: Must be mounted on the existing bathroom wall plane, never placed on the floor.",
+        rule="Water Heater Placement: Must be mounted on an existing wall plane, never placed on the floor.",
         negative_terms=("water heater on floor", "floating water heater"),
         aliases=("water_heater", "máy nước nóng", "may nuoc nong", "water heater"),
     ),
@@ -835,14 +854,50 @@ class ImageEditPromptBuilder:
     def __init__(self) -> None:
         pass
 
+    def _build_refrigerator_only_prompt(self, product: Mapping[str, Any]) -> str:
+        """Prompt ngắn, không mâu thuẫn, cho tác vụ ghép một tủ lạnh."""
+        category = category_prompt_name((product.get("group_code") or "refrigerator"))
+        return (
+            "Mount the refrigerator in picture 2 into picture 1. Picture 1 is the fixed kitchen photo; "
+            "picture 2 is the refrigerator reference. The final image must visibly contain exactly one refrigerator copied from picture 2. "
+            "Place it only in an unobstructed empty floor area at an exposed outer end of the existing kitchen cabinets, with its back against an uninterrupted wall and one side touching the cabinet end panel. "
+            "If there is no full-width empty bay, use the least-obstructed outer image edge with natural partial cropping; do not omit the refrigerator. "
+            "Never overlap, cover, or stand in front of existing cabinets, counters, sink, oven, door, or appliances. Match the room perspective, scale, shadows, and lighting. "
+            "Keep all existing cabinets, counters, sink, oven, door, walls, and floor unchanged. "
+            f"Picture 2 category: {category}."
+        )
+
+    def _build_refrigerator_and_rice_cooker_prompt(
+        self, products: list[dict[str, Any]]
+    ) -> str:
+        """Một prompt duy nhất cho cặp thiết bị sàn + thiết bị mặt bàn."""
+        refrigerator_index = next(
+            index
+            for index, product in enumerate(products, start=2)
+            if product.get("group_code") == "refrigerator"
+        )
+        rice_cooker_index = next(
+            index
+            for index, product in enumerate(products, start=2)
+            if product.get("group_code") == "rice_cooker"
+        )
+        return (
+            f"Mount the refrigerator in picture {refrigerator_index} and the rice cooker in picture {rice_cooker_index} into picture 1. "
+            "Picture 1 is a fixed kitchen photo. First map every placement surface: floor, walls, empty floor zones, base cabinets, upper cabinets, each countertop, shelves, sink, stove, door, and existing appliances. Treat occupied surfaces as unavailable. "
+            "HARD EXACT-COUNT CONSTRAINT: the final image must contain exactly one refrigerator from picture "
+            f"{refrigerator_index} and exactly one compact rice cooker from picture {rice_cooker_index}. Create no duplicate, clone, second unit, or additional appliance of any kind. "
+            "Place the refrigerator upright only on an unobstructed empty floor zone at the exposed outer end of the kitchen cabinets, back against the wall; never overlap or stand in front of cabinets, counters, sink, stove, door, or appliances. "
+            "Place the rice cooker exactly once, resting flat on one existing clear kitchen countertop, away from the counter edge and sink; never place it on the floor or another surface. "
+            "Keep all existing cabinets, counters, sink, stove, door, walls, floor, perspective, lighting, and shadows unchanged."
+        )
+
     def build_product_spec(
         self, product: Mapping[str, Any], index: int
     ) -> ProductPlacementSpec:
         """Xây dựng đặc tả (directive, rule, negative_terms) riêng cho từng sản phẩm."""
         group = (product.get("group_code") or "").strip().lower()
         name = (product.get("product_name") or "").strip().lower()
-        pname = product.get("product_name") or "Product"
-        placement = product.get("placement") or "on the existing floor or shelf naturally"
+        category_code = group
 
         # 1. Tra cứu trực tiếp theo group_code trong CATEGORY_RULES
         cfg = CATEGORY_RULES.get(group)
@@ -852,11 +907,14 @@ class ImageEditPromptBuilder:
             for _code, cat_cfg in CATEGORY_RULES.items():
                 if any(alias in group or alias in name for alias in cat_cfg.aliases):
                     cfg = cat_cfg
+                    category_code = _code
                     break
 
         # 3. Nếu tìm thấy cấu hình quy tắc
         if cfg is not None:
-            directive = cfg.directive_template.format(index=index, pname=pname)
+            directive = cfg.directive_template.format(
+                index=index, pname=category_prompt_name(category_code)
+            )
             return ProductPlacementSpec(
                 directive=directive,
                 rule=cfg.rule,
@@ -865,7 +923,7 @@ class ImageEditPromptBuilder:
 
         # 4. Dự phòng cho trường hợp sản phẩm hoàn toàn nằm ngoài 62 nhóm
         directive = (
-            f"- Picture {index} ({pname}): Place on an existing surface or existing floor in picture 1 {placement}. "
+            f"- Picture {index} ({category_prompt_name(category_code)}): Place on an existing surface or existing floor in picture 1. "
             "Do NOT add any new tables, desks, or furniture."
         )
         return ProductPlacementSpec(directive=directive, rule=None)
@@ -884,6 +942,13 @@ class ImageEditPromptBuilder:
         selected = products[:max_products]
         if not selected:
             return self.default_prompt
+
+        if len(selected) == 1 and selected[0].get("group_code") == "refrigerator":
+            return self._build_refrigerator_only_prompt(selected[0])
+
+        selected_codes = {product.get("group_code") for product in selected}
+        if len(selected) == 2 and selected_codes == {"refrigerator", "rice_cooker"}:
+            return self._build_refrigerator_and_rice_cooker_prompt(selected)
 
         num_products = len(selected)
         has_tv = any(

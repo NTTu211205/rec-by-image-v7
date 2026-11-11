@@ -15,6 +15,7 @@ from app.services.recommender import (
     DETECTOR_TO_GROUP,
     GROUPS_WITHOUT_DETECTOR,
     GROUP_TO_DETECTOR,
+    ROOM_LABEL_WEIGHTS,
     Recommender,
 )
 
@@ -72,7 +73,7 @@ def _cooc() -> dict:
 
 
 def _room_scores() -> dict[str, dict[str, float]]:
-    """Bảng điểm giả cho 3 nhóm trong `_catalog()` — đủ 7 phòng mỗi nhóm.
+    """Bảng điểm giả cho 3 nhóm trong `_catalog()` — đủ 3 phòng mỗi nhóm.
 
     Chỉ `living_room` khác 0 để dễ suy luận khi kiểm tra xếp hạng.
     """
@@ -137,6 +138,29 @@ def test_w_reads_injected_scores() -> None:
 
 def test_room_types_from_contract() -> None:
     assert _recommender().room_types == list(ROOM_CODES)
+    assert all(set(scores) <= set(ROOM_CODES) for scores in ROOM_LABEL_WEIGHTS.values())
+
+
+def test_infer_room_type_uses_detected_room_anchors() -> None:
+    rec = _recommender()
+
+    room, scores = rec.infer_room_type([
+        {"label": "Bed", "confidence": 0.9},
+        {"label": "Pillow", "confidence": 0.8},
+    ])
+
+    assert room == "bedroom"
+    assert scores["bedroom"] > scores["living_room"]
+    assert set(scores) == set(ROOM_CODES)
+
+
+def test_infer_room_type_falls_back_when_no_room_signal() -> None:
+    room, scores = _recommender().infer_room_type([
+        {"label": "Unknown object", "confidence": 0.9},
+    ])
+
+    assert room == "living_room"
+    assert scores == {room_code: 0.0 for room_code in ROOM_CODES}
 
 
 def test_recommender_does_not_mutate_injected_scores() -> None:
@@ -216,7 +240,7 @@ def test_keeps_detected_when_disabled() -> None:
 
 def test_min_score_filters() -> None:
     rec = _recommender()
-    out = rec.recommend([], room_type="bathroom", top_k=10, min_score=0.5)
+    out = rec.recommend([], room_type="kitchen", top_k=10, min_score=0.5)
     assert out["recommendations"] == []
 
 
