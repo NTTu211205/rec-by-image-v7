@@ -55,12 +55,12 @@ def test_recommend_image(client: TestClient) -> None:
     assert len(body["recommendations"]) <= 3
 
     for item in body["recommendations"]:
-        # Cell 10.10: final_score = cooc + room_score
-        assert item["final_score"] == pytest.approx(
-            item["cooccurrence_score"] + item["room_score"], abs=1e-9
-        )
-        assert item["reason"]
         assert item["group_code"] and item["group_name"]
+        assert "room_score" not in item
+        assert "final_score" not in item
+        assert "reason" not in item
+        assert "product_count" not in item
+        assert "cooccurrence_score" in item
 
 
 def test_recommend_image_defaults(client: TestClient) -> None:

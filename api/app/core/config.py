@@ -57,14 +57,13 @@ class Settings(BaseSettings):
     data_root: str = ""
 
     # --- Cell 10.1 / 10.6: catalog sản phẩm ---
-    # Catalog CHỈ đọc từ PostgreSQL schema `mwg` (3 bảng: product, categories, brand).
-    # Không còn fallback CSV: DB không tới được là API khởi động thất bại.
+    # Catalog đọc từ PostgreSQL database `db_dmx` (container `dmx_postgres`).
     db_host: str = "127.0.0.1"
-    db_port: int = 55432
-    db_name: str = "mwgshop"
-    db_user: str = "mwg"
-    db_password: str = "mwg_secret"
-    db_schema: str = "mwg"
+    db_port: int = 5433
+    db_name: str = "db_dmx"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
+    db_schema: str = "public"
     db_connect_timeout_s: int = Field(5, ge=1)
 
     # --- Tham số gợi ý (Cell 10.1) ---

@@ -37,10 +37,6 @@ _EXAMPLE_RESPONSE = {
             "group_name": "Loa",
             "category_id": "electronics",
             "cooccurrence_score": 0.4123,
-            "room_score": 1.0,
-            "final_score": 1.4123,
-            "product_count": 25,
-            "reason": "Ảnh có TV — thường đi kèm Loa (41%); điểm phòng 1.0.",
             "products": [_EXAMPLE_PRODUCT],
         }
     ],
@@ -66,7 +62,7 @@ class Product(BaseModel):
 
 
 class RecommendationItem(BaseModel):
-    """Một nhóm sản phẩm được gợi ý, kèm điểm và lý do (Cell 10.10)."""
+    """Một nhóm sản phẩm được gợi ý, kèm điểm cooccurrence và danh sách sản phẩm (Cell 10.10)."""
 
     group_code: str = Field(..., description="Mã nhóm (= subcategory)", examples=["tv"])
     group_name: str = Field(..., description="Tên nhóm hiển thị", examples=["TV"])
@@ -76,14 +72,6 @@ class RecommendationItem(BaseModel):
     cooccurrence_score: float = Field(
         ..., description="`P_cooc(c | D)` — Noisy-OR (Cell 10.9).", examples=[0.4123]
     )
-    room_score: float = Field(
-        ..., description="`W(c, r)` — điểm phù hợp với phòng.", examples=[0.9]
-    )
-    final_score: float = Field(
-        ..., description="`P_cooc + W(c, r)`.", examples=[1.3123]
-    )
-    product_count: int = Field(..., description="Số sản phẩm của nhóm.", examples=[25])
-    reason: str = Field(..., description="Câu giải thích.")
     products: list[Product] = Field(..., description="Sản phẩm còn hàng.")
 
 
@@ -104,7 +92,7 @@ class RecommendationResponse(BaseModel):
         ..., description="Vật thể đưa vào chấm điểm."
     )
     recommendations: list[RecommendationItem] = Field(
-        ..., description="Đã sắp giảm dần theo `final_score`."
+        ..., description="Đã sắp xếp thứ tự ưu tiên gợi ý."
     )
     generated_image: str | None = Field(
         None,
