@@ -89,7 +89,7 @@ GROUP_PLACEMENT_PROFILES: dict[str, tuple[str, str, str]] = {
     "power_strip": ("other", "power surge protector strip", "on the floor near the wall"),
     "projector": ("other", "home projector", "on the table or shelf"),
     "range_hood": ("other", "kitchen range hood", "mounted on the wall above the stove"),
-    "refrigerator": ("refrigerator", "refrigerator", "on the floor against the wall"),
+    "refrigerator": ("refrigerator", "refrigerator", "on the floor beside the kitchen cabinet (can be partially cropped at frame edge)"),
     "rice_cooker": ("small_appliance", "electric rice cooker", "on the kitchen counter"),
     "robot_vacuum": ("small_appliance", "robot vacuum cleaner", "on the floor"),
     "shaver": ("small_appliance", "electric shaver", "on the bathroom shelf or table"),
@@ -323,6 +323,7 @@ class QwenImageEditClient:
         room_image: bytes | Image.Image | str,
         products: list[dict[str, Any]],
         *,
+        room_type: str | None = None,
         custom_prompt: str | None = None,
         negative_prompt: str | None = None,
         size: str | None = None,
@@ -362,7 +363,7 @@ class QwenImageEditClient:
         if custom_prompt:
             final_prompt = custom_prompt
         elif selected_products:
-            final_prompt = prompt_builder.build_prompt(selected_products)
+            final_prompt = prompt_builder.build_prompt(selected_products, room_type=room_type)
         else:
             final_prompt = prompt_builder.default_prompt
         neg_prompt = (

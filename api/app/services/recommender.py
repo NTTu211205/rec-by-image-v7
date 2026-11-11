@@ -84,6 +84,26 @@ DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "Organizer Storage": ["storage_box"],
     "Remote": ["indoor_camera", "outdoor_camera"],
     "Entertainment Center": ["game_console"],
+    # Thiết bị & gia dụng Nhà bếp
+    "Refrigerator": ["refrigerator"],
+    "Freezer": ["freezer"],
+    "Beverage Cooler": ["beverage_cooler"],
+    "Gas Stove": ["gas_stove"],
+    "Induction Cooker": ["induction_cooker"],
+    "Infrared Cooker": ["infrared_cooker"],
+    "Microwave": ["microwave"],
+    "Oven": ["oven"],
+    "Range Hood": ["range_hood"],
+    "Dishwasher": ["dishwasher"],
+    "Rice Cooker": ["rice_cooker"],
+    "Air Fryer": ["air_fryer"],
+    "Kettle": ["kettle"],
+    "Blender": ["blender"],
+    "Juicer": ["juicer"],
+    "Soy Milk Maker": ["soy_milk_maker"],
+    "Coffee Maker": ["coffee_maker"],
+    "Water Purifier": ["water_purifier"],
+    "Water Dispenser": ["water_dispenser"],
 }
 
 # Nhóm không có detector tương ứng — P_cooc luôn 0, chỉ xếp theo W(c, r).

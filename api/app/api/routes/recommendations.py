@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from app.core.config import PRODUCTS_PER_GROUP_MAX, TOP_K_MAX, Settings, get_settings
 from app.core.exceptions import BusyError, ModelNotReadyError, NotFoundError
@@ -74,6 +74,11 @@ async def recommend_from_image(
         description="Mã phòng; bỏ trống → `DEFAULT_ROOM_TYPE`.",
         examples=["living_room"],
     ),
+    room_type_form: str | None = Form(
+        None,
+        alias="room_type",
+        description="Mã phòng gửi qua form-data.",
+    ),
     top_k: int | None = Query(
         None, ge=1, le=TOP_K_MAX,
         description=f"Số nhóm trả về (1–{TOP_K_MAX}).",
@@ -119,7 +124,7 @@ async def recommend_from_image(
     if not state.ready:
         raise ModelNotReadyError("Model chưa sẵn sàng.")
 
-    room = _validate_room(room_type, state)
+    room = _validate_room(room_type or room_type_form, state)
     category = _validate_category(category_id)
     if top_k is not None and not (1 <= top_k <= TOP_K_MAX):
         raise NotFoundError(f"top_k phải trong [1, {TOP_K_MAX}].")
@@ -137,8 +142,11 @@ async def recommend_from_image(
         raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
     try:
         detected = await asyncio.get_running_loop().run_in_executor(
-            state.executor, state.detector.detect, img,
+            state.executor,
+            state.detector.detect,
+            img,
             confidence if confidence is not None else settings.model_confidence,
+            room,
         )
         result = state.recommender.recommend(
             detected,
@@ -192,6 +200,7 @@ async def recommend_from_image(
             edit_res = await client.mount_products_to_room(
                 room_image=img,
                 products=candidate_products,
+                room_type=room,
                 custom_prompt=edit_prompt,
             )
             result["generation_prompt"] = edit_res.prompt

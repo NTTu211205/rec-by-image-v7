@@ -22,7 +22,8 @@ def test_builder_default_prompt() -> None:
     assert "Mount products in picture 2 and picture 3 to picture 1" in prompt
     assert "Do not change room structure" in prompt
     assert "Zero Invented Furniture or Items" in prompt
-    assert "Room Structure & Background Preservation" in prompt
+    assert "Room Structure Preservation" in prompt
+    assert "Strictly Single Instance" in prompt
     # Default prompt không được chứa tivi hay máy lạnh
     assert "television" not in prompt.lower()
     assert "air conditioner" not in prompt.lower()
@@ -38,8 +39,43 @@ def test_builder_default_negative_prompt() -> None:
     assert "extra tables" in neg
     assert "wooden table in foreground" in neg
     assert "floating objects" in neg
+    assert "duplicate products" in neg
+    assert "twin products" in neg
     assert "tv" not in neg.lower()
     assert neg == DEFAULT_ROOM_EDIT_NEGATIVE_PROMPT
+
+
+def test_builder_keeps_living_room_prompt_unchanged() -> None:
+    builder = ImageEditPromptBuilder()
+    products = [{"group_code": "speaker", "product_name": "Loa"}]
+
+    assert builder.build_prompt(products) == builder.build_prompt(
+        products, room_type="living_room"
+    )
+
+
+def test_builder_adds_kitchen_scene_analysis_before_placement() -> None:
+    prompt = ImageEditPromptBuilder().build_prompt(
+        [{"group_code": "rice_cooker", "product_name": "Nồi cơm điện"}],
+        room_type="kitchen",
+    )
+
+    assert "Kitchen Scene Analysis" in prompt
+    assert "kitchen cabinets" in prompt
+    assert "countertops" in prompt
+    assert prompt.index("Kitchen Scene Analysis") < prompt.index("Picture 2")
+
+
+def test_builder_adds_bedroom_scene_analysis_before_placement() -> None:
+    prompt = ImageEditPromptBuilder().build_prompt(
+        [{"group_code": "lamp", "product_name": "Đèn ngủ"}],
+        room_type="bedroom",
+    )
+
+    assert "Bedroom Scene Analysis" in prompt
+    assert "existing bed" in prompt
+    assert "mirror" in prompt
+    assert prompt.index("Bedroom Scene Analysis") < prompt.index("Picture 2")
 
 
 def test_builder_spec_for_tv() -> None:
@@ -106,12 +142,21 @@ def test_builder_spec_for_refrigerator() -> None:
         {"group_code": "refrigerator", "product_name": "Tủ lạnh Toshiba Inverter 236L"},
         index=2,
     )
-    assert "existing floor against the wall" in spec.directive
-    assert "Do NOT place on tables or counters" in spec.directive
+    assert "existing floor against an existing wall" in spec.directive
+    assert "kitchen cabinet" in spec.directive.lower()
+    assert "directly adjacent to the cabinet end panel" in spec.directive
+    assert "back flush against the wall" in spec.directive
+    assert "Match the camera perspective, vanishing lines" in spec.directive
+    assert "Partial occlusion by an existing cabinet end panel" in spec.directive
+    assert "clear walkway" in spec.directive
+    assert "on tables, or on counters" in spec.directive
     assert spec.rule is not None
     assert "Refrigerator Placement:" in spec.rule
+    assert "kitchen cabinet" in spec.rule.lower()
     assert "floating refrigerator" in spec.negative_terms
     assert "refrigerator on table" in spec.negative_terms
+    assert "refrigerator blocking walkway" in spec.negative_terms
+    assert "refrigerator front facing camera" in spec.negative_terms
 
 
 def test_builder_spec_for_oven() -> None:
@@ -230,20 +275,20 @@ def test_convenience_functions() -> None:
 
 def test_prompt_length_limit() -> None:
     builder = ImageEditPromptBuilder()
-    assert len(builder.default_prompt) < 2000
-    assert len(builder.default_prompt) <= 1700
+    assert len(builder.default_prompt.split()) < 2000
+    assert len(builder.default_prompt) <= 4000
 
     # Test single product
     for code in CATEGORY_RULES:
         p = builder.build_prompt([{"group_code": code, "product_name": f"Product {code}"}])
-        assert len(p) < 2000, f"Exceeded 2000 chars for {code}: {len(p)}"
-        assert len(p) <= 1700, f"Exceeded 1700 chars for {code}: {len(p)}"
+        assert len(p.split()) < 2000, f"Exceeded 2000 words for {code}: {len(p.split())}"
+        assert len(p) <= 4000, f"Exceeded 4000 chars for {code}: {len(p)}"
 
     # Test pair with longest text (kettle + tv, soy_milk_maker + tv)
     p_long = builder.build_prompt([
         {"group_code": "soy_milk_maker", "product_name": "Máy làm sữa hạt đa năng Tefal Ultra Blend High Speed"},
         {"group_code": "tv", "product_name": "Smart Tivi Neo QLED 8K 85 inch Samsung QA85QN900C"}
     ])
-    assert len(p_long) < 2000
-    assert len(p_long) <= 1700
+    assert len(p_long.split()) < 2000
+    assert len(p_long) <= 4000
     assert len(p_long) > 0

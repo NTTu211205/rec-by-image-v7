@@ -145,15 +145,22 @@ def test_matrix_loads() -> None:
 
 
 def test_checkpoint_classes_match_matrix() -> None:
-    """Bộ class chuẩn của Grounding DINO (`CLASS_PROMPTS`) phải khớp 1-1 ma trận."""
-    from app.services.detector import CLASS_PROMPTS, normalize_label
+    """Bộ class của Grounding DINO (`CLASS_PROMPTS`) phải bao phủ toàn bộ class ma trận."""
+    from app.services.detector import CLASS_PROMPTS, normalize_label, LIVING_ROOM_CLASSES, KITCHEN_CLASSES, ROOM_CLASSES
 
     cooc = load_cooccurrence(MATRIX_PATH)
-    assert set(CLASS_PROMPTS.keys()) == set(cooc["classes"])
+    assert set(cooc["classes"]).issubset(set(CLASS_PROMPTS.keys()))
     for canonical, phrases in CLASS_PROMPTS.items():
         assert normalize_label(canonical) == canonical
         for phrase in phrases:
             assert normalize_label(phrase) == canonical, f"{phrase} -> {normalize_label(phrase)} != {canonical}"
+
+    # Kiểm tra tính toàn vẹn của các bộ prompt chuyên biệt theo phòng
+    assert set(LIVING_ROOM_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
+    assert set(KITCHEN_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
+    assert "Sofa" in LIVING_ROOM_CLASSES and "Sofa" not in KITCHEN_CLASSES
+    assert "Refrigerator" in KITCHEN_CLASSES and "Gas Stove" in KITCHEN_CLASSES
+    assert "Gas Stove" not in LIVING_ROOM_CLASSES
 
 
 # --- Metadata nhóm ----------------------------------------------------------
