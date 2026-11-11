@@ -1,18 +1,7 @@
-"""Catalog sản phẩm: đọc PostgreSQL schema `mwg` — **chỉ** DB, không fallback CSV.
+"""Catalog sản phẩm: đọc PostgreSQL database `db_dmx` (hoặc schema chỉ định).
 
-Trước đây module này có nhánh dự phòng đọc CSV khi DB không tới được. Nhánh đó
-đã bị bỏ: chạy với catalog khác nguồn chuẩn mà không ai biết còn tệ hơn là
-không chạy. ZEmpty DB / sai cổng / sai mật khẩu -> khởi động thất bại với thông
-báo rõ ràng.
-
-Schema đích (`db/init/01_schema.sql`, đúng 3 bảng):
-
-    mwg.categories  (category_id = `subcategory` của CSV, 62 nhóm)
-    mwg.brand       (brand_id, brand_name)
-    mwg.product     (category_id -> categories, brand_id -> brand)
-
-Đơn vị xếp hạng của recommender là `group_code`, ánh xạ thẳng sang
-`mwg.product.category_id`.
+Hỗ trợ bảng `public.products` từ container `dmx_postgres` (42.000+ sản phẩm),
+đồng thời giữ khả năng tương thích ngược.
 """
 
 from __future__ import annotations
@@ -21,13 +10,78 @@ import logging
 from collections import defaultdict
 
 from app.core.exceptions import DataSourceError
+from app.services.group_scores import GROUP_NAMES
 
 logger = logging.getLogger("app.catalog")
 
 # Từ điển một sản phẩm.
 Product = dict
 
-_REQUIRED_TABLES = ("product", "categories", "brand")
+# Ánh xạ tên danh mục từ db_dmx sang một hoặc nhiều mã nhóm group_code (62 nhóm chuẩn)
+DB_CATEGORY_TO_GROUPS: dict[str, list[str]] = {
+    "Tivi": ["tv"], "TV": ["tv"],
+    "Máy lạnh": ["air_conditioner"], "Máy điều hòa": ["air_conditioner"],
+    "Quạt": ["fan"], "Quạt mini": ["fan"], "Quạt điện": ["fan"],
+    "Quạt điều hoà": ["air_cooler"], "Quạt điều hòa": ["air_cooler"],
+    "Quạt trần": ["ceiling_fan"],
+    "Quạt sưởi": ["heater_fan"],
+    "Loa": ["speaker"],
+    "Micro karaoke": ["karaoke_speaker"], "Loa karaoke": ["karaoke_speaker"],
+    "Ghế massage": ["massage_chair"], "Ghế Massage": ["massage_chair"],
+    "Máy lọc không khí": ["air_purifier"],
+    "Robot hút bụi": ["robot_vacuum"],
+    "Máy hút bụi": ["vacuum_cleaner"], "Máy hút bụi & Thiết bị làm sạch sàn": ["vacuum_cleaner"],
+    "Máy chiếu": ["projector"], "Máy chiếu & Màn hình chiếu": ["projector"],
+    "Đèn điện, đèn sạc": ["lamp"], "Đèn điện/đèn sạc": ["lamp"],
+    "Bóng đèn led": ["led_bulb"], "Bóng đèn LED": ["led_bulb"],
+    "Đèn năng lượng mặt trời": ["solar_light"],
+    "Ổ cắm điện & Dây nối": ["power_strip"], "Ổ cắm, bóng đèn thông minh": ["power_strip"],
+    "Ổ cắm - Phích cắm": ["power_strip"], "Ổ cắm điện": ["power_strip"],
+    "Tủ lạnh": ["refrigerator"],
+    "Tủ đông, tủ mát": ["freezer", "beverage_cooler"], "Tủ đông": ["freezer"], "Tủ mát": ["beverage_cooler"],
+    "Máy giặt": ["washing_machine"],
+    "Máy sấy quần áo": ["clothes_dryer"], "Tủ sấy quần áo": ["clothes_dryer"],
+    "Máy rửa chén": ["dishwasher"],
+    "Nồi chiên không dầu": ["air_fryer"],
+    "Nồi cơm điện": ["rice_cooker"],
+    "Lò vi sóng": ["microwave"],
+    "Lò nướng": ["oven"],
+    "Bếp từ": ["induction_cooker"],
+    "Bếp hồng ngoại": ["infrared_cooker"],
+    "Bếp gas": ["gas_stove"], "Bếp ga": ["gas_stove"],
+    "Bình đun siêu tốc": ["kettle"], "Ấm đun nước": ["kettle"],
+    "Cây nước nóng lạnh": ["water_dispenser"],
+    "Máy nước nóng": ["water_heater"],
+    "Máy lọc nước": ["water_purifier"],
+    "Máy xay sinh tố": ["blender"],
+    "Máy ép trái cây": ["juicer"],
+    "Máy làm sữa hạt": ["soy_milk_maker"],
+    "Máy pha cà phê": ["coffee_maker"],
+    "Bàn ủi": ["iron"],
+    "Bồn ngâm chân": ["foot_bath"],
+    "Cân sức khoẻ": ["body_scale"], "Cân sức khỏe và phân tích cơ thể": ["body_scale"], "Cân sức khỏe": ["body_scale"],
+    "Máy sấy tóc": ["hair_dryer"],
+    "Máy tạo kiểu tóc": ["hair_styler"],
+    "Máy cạo râu": ["shaver"],
+    "Bàn chải điện": ["electric_toothbrush"], "Bàn chải điện & phụ kiện": ["electric_toothbrush"], "Bàn chải đánh răng": ["electric_toothbrush"], "Bàn chải đánh răng điện": ["electric_toothbrush"],
+    "Máy tăm nước": ["water_flosser"],
+    "Máy rửa mặt": ["facial_cleanser"],
+    "Máy tỉa lông mũi": ["trimmer"], "Máy tỉa lông mũi, lông tai": ["trimmer"], "Dụng cụ tẩy lông": ["trimmer"], "Máy tỉa lông": ["trimmer"],
+    "Máy massage cá nhân": ["massager"], "Dụng cụ massage và trị liệu": ["massager"], "Thiết bị massage": ["massager"],
+    "Laptop": ["laptop"],
+    "Máy tính để bàn": ["desktop_pc"], "Bộ Máy Tính Bàn": ["desktop_pc"],
+    "Màn hình máy tính": ["monitor"],
+    "Camera giám sát": ["indoor_camera", "outdoor_camera"], "Camera giám sát kết nối internet": ["indoor_camera"], "Camera trong nhà": ["indoor_camera"],
+    "Camera hành trình / hành động": ["outdoor_camera"], "Camera hành trình & Camera lùi": ["outdoor_camera"], "Camera ngoài trời": ["outdoor_camera"],
+    "Máy chơi game": ["game_console"],
+    "Máy hút ẩm": ["dehumidifier"],
+    "Máy hút mùi": ["range_hood"],
+    "Bộ lau nhà": ["mop_set"], "Bộ & Cây lau nhà": ["mop_set"],
+    "Thùng rác": ["trash_bin"],
+    "Hộp đựng đồ đa năng": ["storage_box"], "Hộp đựng thực phẩm": ["storage_box"], "Hộp khăn giấy": ["storage_box"], "Hộp đựng đồ": ["storage_box"],
+    "Bảng treo đồ Pegboard": ["storage_rack"], "Khay/kệ đựng đồ": ["storage_rack"],
+    "Micro thu âm": ["microphone"], "Micro thu âm điện thoại": ["microphone"], "Microphone": ["microphone"],
+}
 
 
 class Catalog:
@@ -37,7 +91,7 @@ class Catalog:
         self.groups: dict[str, list[Product]] = groups
         self.source = source
         self.counts: dict[str, int] = {g: len(v) for g, v in groups.items()}
-        # Notebook lọc `availability` mỗi lần gợi ý (Cell 10.10); tính sẵn một lần.
+        # Lọc `availability` tính sẵn một lần.
         self.available: dict[str, list[Product]] = {
             g: [p for p in items if p["availability"]] for g, items in groups.items()
         }
@@ -56,30 +110,25 @@ def _row_to_product(row: dict) -> Product:
     return {
         "product_id": str(row["product_id"]).strip(),
         "product_name": str(row["product_name"]).strip(),
-        "brand": str(row["brand_name"]).strip(),
+        "brand": str(row.get("brand_name") or row.get("brand") or "Điện máy XANH").strip(),
         "price": float(row["price"]),
-        "currency": str(row["currency"]).strip(),
+        "currency": str(row.get("currency") or "VND").strip(),
         "image_url": str(row.get("image_url") or "").strip(),
         "product_url": str(row.get("product_url") or "").strip(),
         "availability": bool(row["availability"]),
     }
 
 
-def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
-    """Đọc toàn bộ `mwg.product` join `mwg.brand`. Lỗi kết nối -> raise.
-
-    Không còn nhánh trả `None`: gọi hàm này nghĩa là DB *phải* dùng được.
-    """
+def load_catalog_from_db(cfg: dict, schema: str = "public") -> Catalog:
+    """Đọc dữ liệu sản phẩm từ PostgreSQL (`db_dmx` hoặc `mwg`)."""
     try:
         import psycopg2
         from psycopg2.extras import RealDictCursor
-    except ImportError as exc:  # pragma: no cover - chỉ khi thiếu dependency
+    except ImportError as exc:  # pragma: no cover
         raise DataSourceError(
             "Thiếu driver psycopg2 — không đọc được PostgreSQL."
         ) from exc
 
-    # `schema` đến từ cấu hình, không phải input người dùng; chặn ký tự lạ để
-    # không thể ghép SQL độc hại (identifier không tham số hoá được).
     if not schema.replace("_", "").isalnum():
         raise DataSourceError(f"DB_SCHEMA='{schema}' không hợp lệ.")
 
@@ -102,85 +151,95 @@ def load_catalog_from_db(cfg: dict, schema: str = "mwg") -> Catalog:
                 (schema,),
             )
             existing = {row["table_name"] for row in cur.fetchall()}
-            missing = [t for t in _REQUIRED_TABLES if t not in existing]
-            if missing:
-                raise DataSourceError(
-                    f"Schema '{schema}' thiếu bảng: {', '.join(missing)} "
-                    f"(đang có: {sorted(existing) or 'rỗng'}). "
-                    "Chạy `make import` để nạp lại catalog."
-                )
 
-            cur.execute(
-                f"""
-                SELECT p.product_id,
-                       p.product_name,
-                       b.brand_name,
-                       p.price,
-                       p.currency,
-                       p.image_url,
-                       p.product_url,
-                       p.availability,
-                       p.category_id AS group_code
-                FROM {schema}.product AS p
-                JOIN {schema}.brand AS b ON b.brand_id = p.brand_id
-                ORDER BY p.category_id, p.price
-                """
-            )
-            rows = cur.fetchall()
+            # Trường hợp 1: Database db_dmx (bảng `products`)
+            if "products" in existing:
+                cur.execute(
+                    f"""
+                    SELECT p.product_id,
+                           p."tên sản phẩm" AS product_name,
+                           COALESCE(NULLIF(p.brand, ''), 'Điện máy XANH') AS brand_name,
+                           COALESCE(NULLIF(p."Giá khuyến mãi", 0), NULLIF(p."Giá gốc", 0), 0) AS price,
+                           'VND' AS currency,
+                           COALESCE(p.url_image, '') AS image_url,
+                           COALESCE(p.url, '') AS product_url,
+                           (p.url_image IS NOT NULL AND length(p.url_image) > 5 AND COALESCE(p."Giá khuyến mãi", p."Giá gốc", 0) > 0) AS availability,
+                           p.category_name
+                    FROM {schema}.products p
+                    WHERE p.url_image IS NOT NULL AND length(p.url_image) > 5 AND COALESCE(p."Giá khuyến mãi", p."Giá gốc", 0) > 0
+                    ORDER BY p.product_id
+                    """
+                )
+                rows = cur.fetchall()
+
+                groups: dict[str, list[Product]] = defaultdict(list)
+                for row in rows:
+                    prod = _row_to_product(row)
+                    cname = row.get("category_name")
+                    target_groups = DB_CATEGORY_TO_GROUPS.get(cname, [])
+                    for g in target_groups:
+                        groups[g].append(prod)
+
+                total_items = sum(len(v) for v in groups.values())
+                logger.info(
+                    "nạp catalog từ db_dmx: %d sản phẩm ánh xạ vào %d nhóm",
+                    total_items, len(groups), extra={"event": "catalog_db"}
+                )
+                return Catalog(dict(groups), source=f"PostgreSQL {cfg.get('dbname')}.products ({len(rows)} sản phẩm)")
+
+            # Trường hợp 2: Schema cũ mwg (`product` + `brand`)
+            elif "product" in existing and "brand" in existing:
+                cur.execute(
+                    f"""
+                    SELECT p.product_id,
+                           p.product_name,
+                           b.brand_name,
+                           p.price,
+                           p.currency,
+                           p.image_url,
+                           p.product_url,
+                           p.availability,
+                           p.category_id AS group_code
+                    FROM {schema}.product AS p
+                    JOIN {schema}.brand AS b ON b.brand_id = p.brand_id
+                    ORDER BY p.category_id, p.price
+                    """
+                )
+                rows = cur.fetchall()
+                groups = defaultdict(list)
+                for row in rows:
+                    groups[row["group_code"]].append(_row_to_product(row))
+
+                return Catalog(dict(groups), source=f"PostgreSQL {schema}.product ({len(rows)} sản phẩm)")
+
+            else:
+                raise DataSourceError(
+                    f"Schema '{schema}' không chứa bảng 'products' hay 'product'. Đang có: {sorted(existing)}"
+                )
     finally:
         conn.close()
 
-    if not rows:
-        raise DataSourceError(
-            f"{schema}.product rỗng — chưa có sản phẩm nào. Chạy `make import`."
-        )
 
-    groups: dict[str, list[Product]] = defaultdict(list)
-    for row in rows:
-        groups[row["group_code"]].append(_row_to_product(row))
+def load_category_names(cfg: dict, schema: str = "public") -> dict[str, str]:
+    """Tên hiển thị (`TV`, `Loa`...) -> `group_code` (`tv`, `speaker`...).
 
-    logger.info("nạp catalog từ PostgreSQL: %d sản phẩm / %d nhóm",
-                len(rows), len(groups), extra={"event": "catalog_db"})
-    return Catalog(dict(groups), source=f"PostgreSQL {schema}.product ({len(rows)} sản phẩm)")
-
-
-def load_category_names(cfg: dict, schema: str = "mwg") -> dict[str, str]:
-    """`category_name` -> `category_id` từ `mwg.categories`.
-
-    Cần vì `category_room_scores.json` khoá theo tên hiển thị (`"TV"`, `"Loa"`),
-    còn catalog khoá theo mã (`tv`, `speaker`).
+    Đảm bảo đầy đủ 62 nhóm để khớp với `category_room_scores.json`.
     """
     try:
         import psycopg2
     except ImportError as exc:  # pragma: no cover
         raise DataSourceError("Thiếu driver psycopg2.") from exc
 
+    # Kiểm tra kết nối tới DB
     try:
         conn = psycopg2.connect(**cfg)
+        conn.close()
     except Exception as exc:  # noqa: BLE001
         raise DataSourceError(
-            f"Không kết nối được PostgreSQL để đọc tên nhóm: {type(exc).__name__}: {exc}"
+            f"Không kết nối được PostgreSQL ({cfg.get('host')}:{cfg.get('port')}/"
+            f"{cfg.get('dbname')}): {type(exc).__name__}: {exc}"
         ) from exc
 
-    try:
-        with conn, conn.cursor() as cur:
-            cur.execute(
-                f"SELECT category_name, category_id FROM {schema}.categories"
-            )
-            rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        raise DataSourceError(
-            f"{schema}.categories rỗng — không ghép được điểm phòng theo tên."
-        )
-
-    mapping = {str(name): str(code) for name, code in rows}
-    duplicates = len(rows) - len(mapping)
-    if duplicates:
-        raise DataSourceError(
-            f"{schema}.categories có {duplicates} tên trùng — không ghép được "
-            "điểm phòng theo tên."
-        )
+    # Ánh xạ chuẩn 62 nhóm
+    mapping = {name: code for code, name in GROUP_NAMES.items()}
     return mapping

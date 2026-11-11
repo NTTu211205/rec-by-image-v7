@@ -99,7 +99,7 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
             "- Picture {index} ({pname}): Mount high on the existing upper wall plane near the ceiling in picture 1. "
             "NEVER on floor, shelves, cabinets, or console. Do NOT modify the wall or ceiling."
         ),
-        rule="Air Conditioner Placement: Mount high on the existing upper wall plane near the ceiling. Keep wall unchanged.",
+        rule="Air Conditioner Placement: Mount high on the existing upper wall plane near the ceiling, alway higher than tivi. Keep wall unchanged.",
         negative_terms=(
             "air conditioner on floor",
             "air conditioner on shelf",
@@ -607,11 +607,12 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     "tv": CategoryRuleConfig(
         directive_template=(
             "- Picture {index} ({pname}): Place the television standing directly on top of the existing TV console shelf or cabinet in picture 1, "
-            "feet flat with zero gap. The television MUST NOT be mounted or hung on the wall; stand feet must touch shelf. Do NOT add new furniture."
+            "feet flat with zero gap. The television MUST NOT be mounted or hung on the wall, If mounting it on the wall, remove the TV stand.; stand feet must touch shelf. Do NOT add new furniture."
         ),
         rule=(
             "Television Placement: Must rest flat on top of existing TV console shelf/cabinet with zero gap under feet. "
             "Do not hang on wall or add new furniture."
+            "Mount the tivi lower than the air conditioner"
         ),
         negative_terms=(
             "wall mounted TV with legs",

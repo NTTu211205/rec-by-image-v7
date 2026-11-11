@@ -301,8 +301,13 @@ class Recommender:
                 continue
             # Rẻ nhất trước: lựa chọn dễ tiếp cận hiển thị trước.
             products.sort(key=lambda p: p["price"])
-            item["products"] = products[:products_per_group]
-            top.append(item)
+            top.append({
+                "group_code": item["group_code"],
+                "group_name": item["group_name"],
+                "category_id": item["category_id"],
+                "cooccurrence_score": item["cooccurrence_score"],
+                "products": products[:products_per_group],
+            })
             if len(top) >= top_k:
                 break
 

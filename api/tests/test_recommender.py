@@ -177,20 +177,23 @@ def test_cooccurrence_zero_without_proxy() -> None:
 
 # --- Xếp hạng ---------------------------------------------------------------
 
-def test_final_score_is_sum() -> None:
+def test_excluded_fields_not_in_recommendations() -> None:
     rec = _recommender()
     out = rec.recommend([{"label": "Sofa", "confidence": 0.9}], room_type="living_room", top_k=5)
     for item in out["recommendations"]:
-        assert item["final_score"] == pytest.approx(
-            item["cooccurrence_score"] + item["room_score"], abs=1e-12
-        )
+        assert "room_score" not in item
+        assert "final_score" not in item
+        assert "reason" not in item
+        assert "product_count" not in item
+        assert "cooccurrence_score" in item
 
 
-def test_sorted_descending() -> None:
+def test_sorted_order() -> None:
     rec = _recommender()
     out = rec.recommend([{"label": "TV", "confidence": 0.9}], room_type="living_room", top_k=10)
-    scores = [i["final_score"] for i in out["recommendations"]]
-    assert scores == sorted(scores, reverse=True)
+    # Gợi ý speaker phải xuất hiện trước các nhóm điểm thấp hơn
+    codes = [i["group_code"] for i in out["recommendations"]]
+    assert "speaker" in codes
 
 
 def test_excludes_detected_groups() -> None:
@@ -264,26 +267,17 @@ def test_category_filter() -> None:
     assert all(i["category_id"] == "electronics" for i in out["recommendations"])
 
 
-def test_product_count_matches_catalog() -> None:
-    rec = _recommender()
-    out = rec.recommend([], room_type="living_room", top_k=20, min_score=0)
-    counts = {i["group_code"]: i["product_count"] for i in out["recommendations"]}
-    assert counts["tv"] == 3  # gồm cả sản phẩm hết hàng — đếm theo catalog
-
-
 def test_reason_mentions_detected_object() -> None:
     rec = _recommender()
-    out = rec.recommend([{"label": "TV", "confidence": 0.9}], room_type="living_room",
-                        top_k=10, min_score=0)
-    speaker = next(i for i in out["recommendations"] if i["group_code"] == "speaker")
-    assert "TV" in speaker["reason"]
+    reason = rec.build_reason("speaker", ["TV"], room_score=1.0, cooc_score=0.41)
+    assert "TV" in reason
+    assert "Loa" in reason
 
 
 def test_reason_without_detections() -> None:
     rec = _recommender()
-    out = rec.recommend([], room_type="living_room", top_k=1, min_score=0)
-    assert out["recommendations"][0]["reason"]
-    assert "phù hợp với phòng" in out["recommendations"][0]["reason"]
+    reason = rec.build_reason("tv", [], room_score=1.0, cooc_score=0.0)
+    assert "phù hợp với phòng" in reason
 
 
 def test_empty_catalog_is_safe() -> None:
@@ -301,8 +295,7 @@ def test_response_shape() -> None:
     assert out["detected_objects"] == detected
     item = out["recommendations"][0]
     assert set(item) == {
-        "group_code", "group_name", "category_id", "cooccurrence_score",
-        "room_score", "final_score", "product_count", "reason", "products",
+        "group_code", "group_name", "category_id", "cooccurrence_score", "products",
     }
 
 
