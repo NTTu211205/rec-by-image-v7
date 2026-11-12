@@ -358,3 +358,28 @@ def test_products_per_group_custom() -> None:
     out = rec.recommend([], room_type="living_room", top_k=5, min_score=0, products_per_group=1)
     for item in out["recommendations"]:
         assert len(item["products"]) == 1
+
+
+def test_default_min_price_filter() -> None:
+    """Mặc định loại bỏ sản phẩm < 250k nếu không truyền price_range."""
+    catalog = Catalog(
+        {
+            "tv": [
+                {"product_id": "1", "product_name": "Phụ kiện rẻ", "price": 100_000.0, "category_id": "38", "availability": True, "currency": "VND", "image_url": "", "product_url": "", "category_name": "Tivi", "brand": "A"},
+                {"product_id": "2", "product_name": "TV chuẩn", "price": 5_000_000.0, "category_id": "38", "availability": True, "currency": "VND", "image_url": "", "product_url": "", "category_name": "Tivi", "brand": "B"},
+            ]
+        },
+        source="test",
+    )
+    rec = Recommender(_cooc(), catalog, room_scores=_room_scores(), default_min_price=250_000.0)
+
+    # 1. Mặc định không truyền price_range -> loại sản phẩm 100k, chỉ giữ sản phẩm 5tr
+    out = rec.recommend([], room_type="living_room", top_k=1, min_score=0)
+    tv = out["recommendations"][0]
+    assert [p["product_name"] for p in tv["products"]] == ["TV chuẩn"]
+
+    # 2. Truyền tường minh price_range=(0, inf) -> cho phép cả sản phẩm 100k
+    out_all = rec.recommend([], room_type="living_room", top_k=1, min_score=0, price_range=(0.0, float("inf")))
+    tv_all = out_all["recommendations"][0]
+    assert [p["product_name"] for p in tv_all["products"]] == ["Phụ kiện rẻ", "TV chuẩn"]
+

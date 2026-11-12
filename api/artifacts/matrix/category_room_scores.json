@@ -70,9 +70,9 @@
     "kitchen": 0.8
   },
   "Khay/kệ đựng đồ": {
-    "living_room": 0.5,
-    "bedroom": 0.8,
-    "kitchen": 0.6
+    "living_room": 0.2,
+    "bedroom": 0.2,
+    "kitchen": 0.5
   },
   "Laptop": {
     "living_room": 0.6,
@@ -80,8 +80,8 @@
     "kitchen": 0.4
   },
   "Loa": {
-    "living_room": 0.96,
-    "bedroom": 0.9,
+    "living_room": 0.9,
+    "bedroom": 0.7,
     "kitchen": 0.4
   },
   "Loa karaoke": {
@@ -236,11 +236,11 @@
   },
   "Quạt sưởi": {
     "living_room": 0.6,
-    "bedroom": 0.9,
+    "bedroom": 0.7,
     "kitchen": 0.4
   },
   "Quạt trần": {
-    "living_room": 0.8,
+    "living_room": 0.7,
     "bedroom": 0.5,
     "kitchen": 0.5
   },
@@ -261,7 +261,7 @@
   },
   "TV": {
     "living_room": 1.0,
-    "bedroom": 0.9,
+    "bedroom": 0.6,
     "kitchen": 0.1
   },
   "Thiết bị massage": {
@@ -305,8 +305,8 @@
     "kitchen": 1.0
   },
   "Ổ cắm điện": {
-    "living_room": 0.8,
-    "bedroom": 0.8,
+    "living_room": 0.5,
+    "bedroom": 0.5,
     "kitchen": 0.8
   }
 }

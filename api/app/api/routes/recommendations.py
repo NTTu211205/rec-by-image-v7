@@ -42,10 +42,14 @@ def _validate_category(category_id: str | None) -> str | None:
     return category_id
 
 
-def _price_range(min_price: float | None, max_price: float | None):
-    if min_price is None and max_price is None:
-        return None
-    return (0.0 if min_price is None else min_price, float("inf") if max_price is None else max_price)
+def _price_range(
+    min_price: float | None,
+    max_price: float | None,
+    default_min_price: float = 250_000.0,
+) -> tuple[float, float]:
+    lo = default_min_price if min_price is None else min_price
+    hi = float("inf") if max_price is None else max_price
+    return (lo, hi)
 
 
 def _validate_ranking_parameters(
@@ -89,6 +93,117 @@ def _candidate_products(result: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
+async def _detect_loaded_images(
+    *,
+    state: Any,
+    settings: Settings,
+    images: list[Any],
+    room_types: list[str | None],
+    confidence: float | None,
+) -> list[list[dict[str, Any]]]:
+    """Detect ảnh theo các batch có cùng room_type, bảo toàn thứ tự input.
+
+    Một batch chỉ chứa các ảnh dùng cùng tập Grounding DINO prompts. Với route
+    auto, cả ba phần tử có ``room_type=None`` nên detector thực sự chạy ba
+    prompt chunks trên batch ba ảnh (thay vì chín lượt inference một ảnh).
+    """
+    if len(images) != len(room_types):
+        raise ValueError("Số ảnh và room_type để detect batch không khớp.")
+    if not images:
+        return []
+    if not state.try_acquire():
+        raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
+
+    batches: dict[str | None, list[tuple[int, Any]]] = {}
+    for image_index, (image, room_type) in enumerate(zip(images, room_types, strict=True)):
+        batches.setdefault(room_type, []).append((image_index, image))
+
+    detected_by_image: list[list[dict[str, Any]] | None] = [None] * len(images)
+    threshold = confidence if confidence is not None else settings.model_confidence
+    try:
+        for room_type, indexed_images in batches.items():
+            batch_images = [image for _, image in indexed_images]
+            detected_batch = await asyncio.get_running_loop().run_in_executor(
+                state.executor,
+                state.detector.detect_batch,
+                batch_images,
+                threshold,
+                room_type,
+            )
+            if len(detected_batch) != len(indexed_images):
+                raise ModelNotReadyError("Grounding DINO trả kết quả batch không đầy đủ.")
+            for (image_index, _), detected in zip(indexed_images, detected_batch, strict=True):
+                detected_by_image[image_index] = detected
+    finally:
+        state.release()
+
+    # ``detected_batch`` luôn có một list cho mỗi ảnh; guard này tránh trả
+    # nhầm dữ liệu giữa các ảnh nếu detector/gateway bất thường.
+    if any(detected is None for detected in detected_by_image):
+        raise ModelNotReadyError("Grounding DINO không trả đủ kết quả cho batch ảnh.")
+    return [detected for detected in detected_by_image if detected is not None]
+
+
+async def _generate_recommendation_image(
+    *,
+    state: Any,
+    settings: Settings,
+    image: Any,
+    recommendation: RecommendationResponse,
+    edit_prompt: str | None = None,
+) -> RecommendationResponse:
+    """Gọi Qwen cho một kết quả, có semaphore dùng chung trên toàn API process."""
+    result = recommendation.model_dump()
+    candidates = _candidate_products(result)
+    if not candidates:
+        result["generation_status"] = "skipped"
+        result["generation_error"] = (
+            "Không có sản phẩm trong 2 nhóm đầu hoặc sản phẩm thiếu image_url."
+        )
+        return RecommendationResponse(**result)
+
+    client = QwenImageEditClient(
+        base_url=settings.qwen_gateway_url,
+        api_key=settings.qwen_api_key,
+        timeout=settings.qwen_gateway_timeout_s,
+        connect_timeout=settings.qwen_gateway_connect_timeout_s,
+    )
+    logger.info(
+        "Qwen edit waiting for shared slot",
+        extra={
+            "event": "qwen_edit_waiting",
+            "room_type": result["room_type"],
+            "max_concurrent_edits": settings.qwen_max_concurrent_edits,
+        },
+    )
+    async with state.qwen_edit_semaphore:
+        logger.info(
+            "Qwen edit acquired shared slot",
+            extra={
+                "event": "qwen_edit_started",
+                "room_type": result["room_type"],
+                "max_concurrent_edits": settings.qwen_max_concurrent_edits,
+            },
+        )
+        # QwenImageEditClient log đầy đủ prompt ngay trước external request.
+        edit_res = await client.mount_products_to_room(
+            room_image=image,
+            products=candidates,
+            room_type=result["room_type"],
+            custom_prompt=edit_prompt,
+        )
+
+    result["generation_prompt"] = edit_res.prompt
+    if edit_res.success and edit_res.generated_image:
+        result["generated_image"] = edit_res.generated_image
+        result["generation_status"] = "success"
+        result["generation_error"] = None
+    else:
+        result["generation_status"] = "failed"
+        result["generation_error"] = edit_res.error
+    return RecommendationResponse(**result)
+
+
 async def _recommend_loaded_image(
     *,
     state: Any,
@@ -105,85 +220,65 @@ async def _recommend_loaded_image(
     category_id: str | None = None,
     generate_image: bool | None = None,
     edit_prompt: str | None = None,
+    detected: list[dict[str, Any]] | None = None,
 ) -> RecommendationResponse:
-    """Detect, chọn phòng, gợi ý và (nếu được yêu cầu) ghép sản phẩm cho một ảnh."""
+    """Chọn phòng, gợi ý và ghép sản phẩm; detect nếu caller chưa cung cấp kết quả."""
     detection_room = requested_room or None
     provided_room = _validate_room(requested_room, state) if requested_room else None
 
-    if not state.try_acquire():
-        raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
-    try:
-        detected = await asyncio.get_running_loop().run_in_executor(
-            state.executor,
-            state.detector.detect,
-            image,
-            confidence if confidence is not None else settings.model_confidence,
-            detection_room,
-        )
-        if provided_room is None:
-            room, room_detection_scores = state.recommender.infer_room_type(detected)
-            room_type_source = "inferred" if any(room_detection_scores.values()) else "default"
-        else:
-            room = provided_room
-            room_detection_scores = None
-            room_type_source = "provided"
+    if detected is None:
+        detected = (await _detect_loaded_images(
+            state=state,
+            settings=settings,
+            images=[image],
+            room_types=[detection_room],
+            confidence=confidence,
+        ))[0]
 
-        result = state.recommender.recommend(
-            detected,
-            room_type=room,
-            top_k=top_k,
-            min_score=min_score,
-            exclude_detected=(
-                settings.default_exclude_detected if exclude_detected is None else exclude_detected
-            ),
-            products_per_group=products_per_group,
-            price_range=_price_range(min_price, max_price),
-            category_id=category_id,
-        )
-        result["room_type_source"] = room_type_source
-        result["room_detection_scores"] = room_detection_scores
-    finally:
-        state.release()
+    if provided_room is None:
+        room, room_detection_scores = state.recommender.infer_room_type(detected)
+        room_type_source = "inferred" if any(room_detection_scores.values()) else "default"
+    else:
+        room = provided_room
+        room_detection_scores = None
+        room_type_source = "provided"
+
+    result = state.recommender.recommend(
+        detected,
+        room_type=room,
+        top_k=top_k,
+        min_score=min_score,
+        exclude_detected=(
+            settings.default_exclude_detected if exclude_detected is None else exclude_detected
+        ),
+        products_per_group=products_per_group,
+        price_range=_price_range(min_price, max_price, settings.default_min_price),
+        category_id=category_id,
+    )
+    result["room_type_source"] = room_type_source
+    result["room_detection_scores"] = room_detection_scores
 
     should_generate = (
         generate_image if generate_image is not None else settings.auto_generate_image
     )
     if should_generate:
-        candidates = _candidate_products(result)
-        if candidates:
-            client = QwenImageEditClient(
-                base_url=settings.qwen_gateway_url,
-                api_key=settings.qwen_api_key,
-                timeout=settings.qwen_gateway_timeout_s,
-                connect_timeout=settings.qwen_gateway_connect_timeout_s,
-            )
-            edit_res = await client.mount_products_to_room(
-                room_image=image,
-                products=candidates,
-                room_type=room,
-                custom_prompt=edit_prompt,
-            )
-            result["generation_prompt"] = edit_res.prompt
-            if edit_res.success and edit_res.generated_image:
-                result["generated_image"] = edit_res.generated_image
-                result["generation_status"] = "success"
-            else:
-                result["generation_status"] = "failed"
-                result["generation_error"] = edit_res.error
-        else:
-            result["generation_status"] = "skipped"
-            result["generation_error"] = (
-                "Không có sản phẩm trong 2 nhóm đầu hoặc sản phẩm thiếu image_url."
-            )
+        response = await _generate_recommendation_image(
+            state=state,
+            settings=settings,
+            image=image,
+            recommendation=RecommendationResponse(**result),
+            edit_prompt=edit_prompt,
+        )
     else:
         result["generation_status"] = "skipped"
+        response = RecommendationResponse(**result)
 
     logger.info(
         "recommend done",
         extra={"event": "recommend", "detected": len(detected),
                "groups": len(result["recommendations"]), "room_type": room},
     )
-    return RecommendationResponse(**result)
+    return response
 
 
 async def _load_three_images(images: list[UploadFile], settings: Settings) -> list[Any]:
@@ -246,7 +341,9 @@ async def recommend_from_image(
         description=f"Số sản phẩm mỗi nhóm (1–{PRODUCTS_PER_GROUP_MAX}).",
         examples=[3],
     ),
-    min_price: float | None = Query(None, ge=0, description="Giá thấp nhất."),
+    min_price: float | None = Query(
+        None, ge=0, description="Giá thấp nhất (mặc định: 250.000đ).", examples=[250000.0]
+    ),
     max_price: float | None = Query(None, ge=0, description="Giá cao nhất."),
     category_id: str | None = Query(
         None,
@@ -323,7 +420,9 @@ async def recommend_three_rooms_auto(
         le=PRODUCTS_PER_GROUP_MAX,
         description="Số sản phẩm trong mỗi nhóm của từng phòng.",
     ),
-    min_price: float | None = Query(None, ge=0, description="Giá thấp nhất."),
+    min_price: float | None = Query(
+        None, ge=0, description="Giá thấp nhất (mặc định: 250.000đ).", examples=[250000.0]
+    ),
     max_price: float | None = Query(None, ge=0, description="Giá cao nhất."),
     confidence: float | None = Query(None, ge=0, le=1, description="Ngưỡng detector."),
 ) -> ThreeRoomRecommendationResponse:
@@ -332,8 +431,15 @@ async def recommend_three_rooms_auto(
         raise ModelNotReadyError("Model chưa sẵn sàng.")
     _validate_ranking_parameters(top_k, product_per_group)
     loaded_images = await _load_three_images(images, settings)
+    detected_by_image = await _detect_loaded_images(
+        state=state,
+        settings=settings,
+        images=loaded_images,
+        room_types=[None] * len(loaded_images),
+        confidence=confidence,
+    )
 
-    results = [
+    base_results = [
         await _recommend_loaded_image(
             state=state,
             settings=settings,
@@ -344,10 +450,20 @@ async def recommend_three_rooms_auto(
             min_price=min_price,
             max_price=max_price,
             confidence=confidence,
-            generate_image=True,
+            generate_image=False,
+            detected=detected,
         )
-        for image in loaded_images
+        for image, detected in zip(loaded_images, detected_by_image, strict=True)
     ]
+    results = await asyncio.gather(*[
+        _generate_recommendation_image(
+            state=state,
+            settings=settings,
+            image=image,
+            recommendation=recommendation,
+        )
+        for image, recommendation in zip(loaded_images, base_results, strict=True)
+    ])
     return ThreeRoomRecommendationResponse(results=results)
 
 
@@ -387,7 +503,9 @@ async def recommend_three_rooms_by_type(
         le=PRODUCTS_PER_GROUP_MAX,
         description="Số sản phẩm trong mỗi nhóm của từng phòng.",
     ),
-    min_price: float | None = Query(None, ge=0, description="Giá thấp nhất."),
+    min_price: float | None = Query(
+        None, ge=0, description="Giá thấp nhất (mặc định: 250.000đ).", examples=[250000.0]
+    ),
     max_price: float | None = Query(None, ge=0, description="Giá cao nhất."),
     confidence: float | None = Query(None, ge=0, le=1, description="Ngưỡng detector."),
 ) -> ThreeRoomRecommendationResponse:
@@ -400,8 +518,15 @@ async def recommend_three_rooms_by_type(
     # Validate hết trước khi chạy inference hoặc gọi gateway.
     validated_rooms = [_validate_room(room_type, state) for room_type in room_types]
     loaded_images = await _load_three_images(images, settings)
+    detected_by_image = await _detect_loaded_images(
+        state=state,
+        settings=settings,
+        images=loaded_images,
+        room_types=validated_rooms,
+        confidence=confidence,
+    )
 
-    results = [
+    base_results = [
         await _recommend_loaded_image(
             state=state,
             settings=settings,
@@ -412,8 +537,20 @@ async def recommend_three_rooms_by_type(
             min_price=min_price,
             max_price=max_price,
             confidence=confidence,
-            generate_image=True,
+            generate_image=False,
+            detected=detected,
         )
-        for image, room_type in zip(loaded_images, validated_rooms, strict=True)
+        for image, room_type, detected in zip(
+            loaded_images, validated_rooms, detected_by_image, strict=True
+        )
     ]
+    results = await asyncio.gather(*[
+        _generate_recommendation_image(
+            state=state,
+            settings=settings,
+            image=image,
+            recommendation=recommendation,
+        )
+        for image, recommendation in zip(loaded_images, base_results, strict=True)
+    ])
     return ThreeRoomRecommendationResponse(results=results)

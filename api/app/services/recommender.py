@@ -177,6 +177,7 @@ class Recommender:
         default_top_k: int = 10,
         default_min_score: float = 0.05,
         default_products_per_group: int = 3,
+        default_min_price: float = 250_000.0,
     ):
         self.classes: list[str] = list(cooc["classes"])
         self.matrix: list[list[float]] = cooc["matrix"]
@@ -197,6 +198,7 @@ class Recommender:
         self.default_top_k = default_top_k
         self.default_min_score = default_min_score
         self.default_products_per_group = default_products_per_group
+        self.default_min_price = default_min_price
         self._index = {c: i for i, c in enumerate(self.classes)}
 
         # Ứng viên = nhóm có trong catalog VÀ có điểm phòng; tính một lần.
@@ -413,10 +415,15 @@ class Recommender:
         # `min_price`/`max_price`), nên bỏ qua và lấy tiếp ứng viên phía sau để
         # vẫn đủ `top_k`.
         top: list[dict[str, Any]] = []
+        effective_price_range = (
+            price_range
+            if price_range is not None
+            else (self.default_min_price, float("inf"))
+        )
         for item in candidates:
             products = list(self.catalog.available.get(item["group_code"], ()))
-            if price_range is not None:
-                lo, hi = price_range
+            if effective_price_range is not None:
+                lo, hi = effective_price_range
                 products = [p for p in products if lo <= p["price"] <= hi]
             if not products:
                 continue

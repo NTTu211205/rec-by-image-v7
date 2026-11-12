@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -11,7 +12,10 @@ from PIL import Image
 
 from app.core.config import Settings
 from app.main import create_app
+from app.api.routes.recommendations import _generate_recommendation_image
+from app.schemas.recommendation import RecommendationResponse
 from app.services.qwen_image_edit import (
+    PlaceResult,
     QwenImageEditClient,
     build_room_edit_negative_prompt,
     build_room_edit_prompt,
@@ -174,6 +178,74 @@ def test_qwen_missing_env_config() -> None:
         res2 = await no_url_client.edit_image("prompt", [b"img"])
         assert res2.success is False
         assert "QWEN_GATEWAY_URL" in (res2.error or "")
+
+    asyncio.run(_run())
+
+
+def test_qwen_batch_generation_runs_in_parallel_with_shared_limit() -> None:
+    """Ba kết quả được gather đồng thời, nhưng gateway chỉ có hai edit đang chạy."""
+    async def _run() -> None:
+        active = 0
+        peak_active = 0
+
+        async def fake_mount(_self, **_kwargs) -> PlaceResult:
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return PlaceResult(
+                success=True,
+                generated_image="https://cdn.example.com/composed.jpg",
+                prompt="batch test prompt",
+            )
+
+        def recommendation(index: int) -> RecommendationResponse:
+            return RecommendationResponse(
+                room_type="living_room",
+                room_type_source="provided",
+                room_detection_scores=None,
+                detected_objects=[],
+                recommendations=[{
+                    "group_code": "tv",
+                    "group_name": "TV",
+                    "category_id": "37",
+                    "group_category_id": "electronics",
+                    "cooccurrence_score": 0.5,
+                    "products": [{
+                        "product_id": f"P{index}",
+                        "category_id": "37",
+                        "category_name": "Tivi",
+                        "product_name": "TV",
+                        "brand": "Test",
+                        "price": 1_000_000,
+                        "currency": "VND",
+                        "image_url": "https://cdn.example.com/product.jpg",
+                        "product_url": "https://example.com/product",
+                    }],
+                }],
+                generation_status="skipped",
+            )
+
+        state = SimpleNamespace(qwen_edit_semaphore=asyncio.Semaphore(2))
+        settings = Settings(
+            qwen_gateway_url="https://gateway.example.com",
+            qwen_api_key="test-key",
+            qwen_max_concurrent_edits=2,
+        )
+        with patch.object(QwenImageEditClient, "mount_products_to_room", fake_mount):
+            results = await asyncio.gather(*[
+                _generate_recommendation_image(
+                    state=state,
+                    settings=settings,
+                    image=Image.new("RGB", (64, 64)),
+                    recommendation=recommendation(index),
+                )
+                for index in range(3)
+            ])
+
+        assert peak_active == 2
+        assert all(result.generation_status == "success" for result in results)
 
     asyncio.run(_run())
 
