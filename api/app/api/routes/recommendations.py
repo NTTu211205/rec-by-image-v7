@@ -93,57 +93,6 @@ def _candidate_products(result: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-async def _detect_loaded_images(
-    *,
-    state: Any,
-    settings: Settings,
-    images: list[Any],
-    room_types: list[str | None],
-    confidence: float | None,
-) -> list[list[dict[str, Any]]]:
-    """Detect ảnh theo các batch có cùng room_type, bảo toàn thứ tự input.
-
-    Một batch chỉ chứa các ảnh dùng cùng tập Grounding DINO prompts. Với route
-    auto, cả ba phần tử có ``room_type=None`` nên detector thực sự chạy ba
-    prompt chunks trên batch ba ảnh (thay vì chín lượt inference một ảnh).
-    """
-    if len(images) != len(room_types):
-        raise ValueError("Số ảnh và room_type để detect batch không khớp.")
-    if not images:
-        return []
-    if not state.try_acquire():
-        raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
-
-    batches: dict[str | None, list[tuple[int, Any]]] = {}
-    for image_index, (image, room_type) in enumerate(zip(images, room_types, strict=True)):
-        batches.setdefault(room_type, []).append((image_index, image))
-
-    detected_by_image: list[list[dict[str, Any]] | None] = [None] * len(images)
-    threshold = confidence if confidence is not None else settings.model_confidence
-    try:
-        for room_type, indexed_images in batches.items():
-            batch_images = [image for _, image in indexed_images]
-            detected_batch = await asyncio.get_running_loop().run_in_executor(
-                state.executor,
-                state.detector.detect_batch,
-                batch_images,
-                threshold,
-                room_type,
-            )
-            if len(detected_batch) != len(indexed_images):
-                raise ModelNotReadyError("Grounding DINO trả kết quả batch không đầy đủ.")
-            for (image_index, _), detected in zip(indexed_images, detected_batch, strict=True):
-                detected_by_image[image_index] = detected
-    finally:
-        state.release()
-
-    # ``detected_batch`` luôn có một list cho mỗi ảnh; guard này tránh trả
-    # nhầm dữ liệu giữa các ảnh nếu detector/gateway bất thường.
-    if any(detected is None for detected in detected_by_image):
-        raise ModelNotReadyError("Grounding DINO không trả đủ kết quả cho batch ảnh.")
-    return [detected for detected in detected_by_image if detected is not None]
-
-
 async def _generate_recommendation_image(
     *,
     state: Any,
@@ -220,20 +169,33 @@ async def _recommend_loaded_image(
     category_id: str | None = None,
     generate_image: bool | None = None,
     edit_prompt: str | None = None,
-    detected: list[dict[str, Any]] | None = None,
+    request_slot_reserved: bool = False,
 ) -> RecommendationResponse:
-    """Chọn phòng, gợi ý và ghép sản phẩm; detect nếu caller chưa cung cấp kết quả."""
+    """Một pipeline: detect → chọn phòng → recommend → (tuỳ chọn) Qwen."""
     detection_room = requested_room or None
     provided_room = _validate_room(requested_room, state) if requested_room else None
 
-    if detected is None:
-        detected = (await _detect_loaded_images(
-            state=state,
-            settings=settings,
-            images=[image],
-            room_types=[detection_room],
-            confidence=confidence,
-        ))[0]
+    if request_slot_reserved:
+        detected = await asyncio.get_running_loop().run_in_executor(
+            state.executor,
+            state.detector.detect,
+            image,
+            confidence if confidence is not None else settings.model_confidence,
+            detection_room,
+        )
+    else:
+        if not state.try_acquire():
+            raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
+        try:
+            detected = await asyncio.get_running_loop().run_in_executor(
+                state.executor,
+                state.detector.detect,
+                image,
+                confidence if confidence is not None else settings.model_confidence,
+                detection_room,
+            )
+        finally:
+            state.release()
 
     if provided_room is None:
         room, room_detection_scores = state.recommender.infer_room_type(detected)
@@ -426,44 +388,32 @@ async def recommend_three_rooms_auto(
     max_price: float | None = Query(None, ge=0, description="Giá cao nhất."),
     confidence: float | None = Query(None, ge=0, le=1, description="Ngưỡng detector."),
 ) -> ThreeRoomRecommendationResponse:
-    """Batch ba ảnh, tự nhận diện loại phòng, luôn thử ghép sản phẩm cho từng ảnh."""
+    """Ba pipeline song song; DINO tuần tự, Qwen của ảnh trước được overlap."""
     if not state.ready:
         raise ModelNotReadyError("Model chưa sẵn sàng.")
     _validate_ranking_parameters(top_k, product_per_group)
     loaded_images = await _load_three_images(images, settings)
-    detected_by_image = await _detect_loaded_images(
-        state=state,
-        settings=settings,
-        images=loaded_images,
-        room_types=[None] * len(loaded_images),
-        confidence=confidence,
-    )
-
-    base_results = [
-        await _recommend_loaded_image(
-            state=state,
-            settings=settings,
-            image=image,
-            requested_room=None,
-            top_k=top_k,
-            products_per_group=product_per_group,
-            min_price=min_price,
-            max_price=max_price,
-            confidence=confidence,
-            generate_image=False,
-            detected=detected,
-        )
-        for image, detected in zip(loaded_images, detected_by_image, strict=True)
-    ]
-    results = await asyncio.gather(*[
-        _generate_recommendation_image(
-            state=state,
-            settings=settings,
-            image=image,
-            recommendation=recommendation,
-        )
-        for image, recommendation in zip(loaded_images, base_results, strict=True)
-    ])
+    if not state.try_acquire():
+        raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
+    try:
+        results = await asyncio.gather(*[
+            _recommend_loaded_image(
+                state=state,
+                settings=settings,
+                image=image,
+                requested_room=None,
+                top_k=top_k,
+                products_per_group=product_per_group,
+                min_price=min_price,
+                max_price=max_price,
+                confidence=confidence,
+                generate_image=True,
+                request_slot_reserved=True,
+            )
+            for image in loaded_images
+        ])
+    finally:
+        state.release()
     return ThreeRoomRecommendationResponse(results=results)
 
 
@@ -509,7 +459,7 @@ async def recommend_three_rooms_by_type(
     max_price: float | None = Query(None, ge=0, description="Giá cao nhất."),
     confidence: float | None = Query(None, ge=0, le=1, description="Ngưỡng detector."),
 ) -> ThreeRoomRecommendationResponse:
-    """Batch ba ảnh, dùng loại phòng caller chỉ định, luôn thử ghép sản phẩm."""
+    """Ba pipeline song song với room caller chỉ định."""
     if not state.ready:
         raise ModelNotReadyError("Model chưa sẵn sàng.")
     if len(room_types) != 3:
@@ -518,39 +468,25 @@ async def recommend_three_rooms_by_type(
     # Validate hết trước khi chạy inference hoặc gọi gateway.
     validated_rooms = [_validate_room(room_type, state) for room_type in room_types]
     loaded_images = await _load_three_images(images, settings)
-    detected_by_image = await _detect_loaded_images(
-        state=state,
-        settings=settings,
-        images=loaded_images,
-        room_types=validated_rooms,
-        confidence=confidence,
-    )
-
-    base_results = [
-        await _recommend_loaded_image(
-            state=state,
-            settings=settings,
-            image=image,
-            requested_room=room_type,
-            top_k=top_k,
-            products_per_group=product_per_group,
-            min_price=min_price,
-            max_price=max_price,
-            confidence=confidence,
-            generate_image=False,
-            detected=detected,
-        )
-        for image, room_type, detected in zip(
-            loaded_images, validated_rooms, detected_by_image, strict=True
-        )
-    ]
-    results = await asyncio.gather(*[
-        _generate_recommendation_image(
-            state=state,
-            settings=settings,
-            image=image,
-            recommendation=recommendation,
-        )
-        for image, recommendation in zip(loaded_images, base_results, strict=True)
-    ])
+    if not state.try_acquire():
+        raise BusyError("Hệ thống đang xử lý quá nhiều yêu cầu, thử lại sau.")
+    try:
+        results = await asyncio.gather(*[
+            _recommend_loaded_image(
+                state=state,
+                settings=settings,
+                image=image,
+                requested_room=room_type,
+                top_k=top_k,
+                products_per_group=product_per_group,
+                min_price=min_price,
+                max_price=max_price,
+                confidence=confidence,
+                generate_image=True,
+                request_slot_reserved=True,
+            )
+            for image, room_type in zip(loaded_images, validated_rooms, strict=True)
+        ])
+    finally:
+        state.release()
     return ThreeRoomRecommendationResponse(results=results)

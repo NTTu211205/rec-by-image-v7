@@ -178,7 +178,6 @@ def build_state(settings: Settings) -> AppState:
         settings.model_device,
         settings.detect_jpeg_roundtrip,
         text_threshold=settings.model_text_threshold,
-        batch_size=settings.detect_batch_size,
         shortest_edge=settings.detect_shortest_edge,
         longest_edge=settings.detect_longest_edge,
     )

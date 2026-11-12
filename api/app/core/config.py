@@ -45,9 +45,6 @@ class Settings(BaseSettings):
     model_text_threshold: float = Field(0.25, ge=0, le=1)
     # Tái tạo bước nén JPEG trong bộ nhớ để chuẩn hoá ảnh RGB đầu vào.
     detect_jpeg_roundtrip: bool = True
-    # 0 = tự chọn: batch 3 trên CUDA, từng ảnh trên CPU/MPS để tránh padding
-    # khiến một batch lớn chậm hơn xử lý tuần tự.
-    detect_batch_size: int = Field(0, ge=0, le=3)
     # Grounding DINO mặc định resize shortest edge lên 800px. Interior object
     # detection chỉ cần bố cục/vật thể lớn nên 512px giảm đáng kể CPU latency.
     detect_shortest_edge: int = Field(512, ge=320, le=800)

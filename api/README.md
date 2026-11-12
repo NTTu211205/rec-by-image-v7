@@ -72,7 +72,6 @@ Bảng ánh xạ `CLASS_PROMPTS` trong `app/services/detector.py` định nghĩa
 | `QWEN_GATEWAY_URL` | `https://ai.itmwg.vn/ai-mwg/qwen-edit-image` | URL cổng Qwen Image Edit Gateway |
 | `QWEN_API_KEY` | *(Key bảo mật MWG)* | API Key gửi qua header `apikey` |
 | `QWEN_MAX_CONCURRENT_EDITS` | `2` | Số request `images/edits` đồng thời tối đa trong toàn API process (1–3) |
-| `DETECT_BATCH_SIZE` | `0` | `0`: batch 3 trên CUDA, từng ảnh trên CPU/MPS; đặt `1–3` để ghi đè sau benchmark |
 | `DETECT_SHORTEST_EDGE` / `DETECT_LONGEST_EDGE` | `512` / `768` | Kích thước resize Grounding DINO trước detect; ảnh gốc vẫn giữ nguyên cho Qwen |
 | `AUTO_GENERATE_IMAGE` | `false` | Tự động tạo ảnh phối cảnh nếu request không chỉ định |
 
@@ -144,14 +143,14 @@ Các tham số tuỳ chọn:
 
 ### Batch ba phòng
 
-`POST /api/v1/recommendations/images/auto` nhận đúng ba field ảnh cùng tên `images`, tự xác định loại phòng từng ảnh, rồi ghép sản phẩm cho từng ảnh. Grounding DINO tự chọn micro-batch theo device: CUDA dùng batch ba ảnh, còn CPU/MPS chạy từng ảnh để tránh padding làm chậm inference. Kết quả nhãn luôn tách riêng, theo đúng thứ tự ba ảnh đầu vào:
+`POST /api/v1/recommendations/images/auto` nhận đúng ba field ảnh cùng tên `images`, tự xác định loại phòng từng ảnh, rồi ghép sản phẩm cho từng ảnh. Ba pipeline được lập lịch đồng thời: Grounding DINO dùng một model tuần tự an toàn; Qwen của ảnh đã detect xong có thể chạy trong khi DINO đang xử lý các ảnh tiếp theo. Kết quả luôn tách riêng, theo đúng thứ tự ba ảnh đầu vào:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/images/auto?top_k=5&product_per_group=3" \
   -F "images=@phong-1.jpg" -F "images=@phong-2.jpg" -F "images=@phong-3.jpg"
 ```
 
-`POST /api/v1/recommendations/images/by-room` nhận thêm đúng ba `room_types` theo cùng thứ tự ảnh. Các ảnh có cùng `room_type` được gom cùng micro-batch khi device phù hợp; room khác nhau luôn tách batch để giữ nguyên tập nhãn chuyên biệt của từng phòng:
+`POST /api/v1/recommendations/images/by-room` nhận thêm đúng ba `room_types` theo cùng thứ tự ảnh; mỗi ảnh có pipeline riêng với bộ nhãn chuyên biệt của phòng đó:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/images/by-room?top_k=5&product_per_group=3" \

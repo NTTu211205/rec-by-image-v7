@@ -340,7 +340,7 @@ def resolve_device(requested: str) -> str:
 
 
 class Detector:
-    """Bọc Grounding DINO, hỗ trợ detect một ảnh hoặc batch ảnh cùng text prompt."""
+    """Bọc Grounding DINO; một model dùng chung nên inference được tuần tự hoá."""
 
     def __init__(
         self,
@@ -348,7 +348,6 @@ class Detector:
         device: str = "auto",
         jpeg_roundtrip: bool = True,
         text_threshold: float = DEFAULT_TEXT_THRESHOLD,
-        batch_size: int = 0,
         shortest_edge: int = 512,
         longest_edge: int = 768,
     ):
@@ -357,7 +356,6 @@ class Detector:
         self.device = resolve_device(device)
         self.jpeg_roundtrip = jpeg_roundtrip
         self.text_threshold = text_threshold
-        self.batch_size = batch_size
         self.image_size = {
             "shortest_edge": shortest_edge,
             "longest_edge": longest_edge,
@@ -436,7 +434,7 @@ class Detector:
             self.detect(Image.new("RGB", (64, 64)), confidence=0.99, room_type="living_room")
 
     def _prepare_image(self, img: Image.Image) -> Image.Image:
-        """Chuẩn hoá đầu vào giống nhau cho đường một ảnh và batch ảnh."""
+        """Chuẩn hoá đầu vào ảnh trước khi đưa vào Grounding DINO."""
         if self.jpeg_roundtrip:
             buf = BytesIO()
             img.save(buf, format="JPEG")
@@ -453,57 +451,21 @@ class Detector:
         )
         return resolved_room, prompts
 
-    @property
-    def inference_batch_size(self) -> int:
-        """Batch size thực tế: CUDA dùng batch 3, CPU/MPS mặc định dùng từng ảnh.
-
-        Grounding DINO phải padding toàn bộ ảnh trong micro-batch về kích thước
-        lớn nhất. Trên CPU, batch 3 thường chậm hơn nhiều so với ba forward nhỏ
-        dù số lần gọi model ít hơn; chỉ CUDA mặc định hưởng lợi từ vectorisation.
-        ``DETECT_BATCH_SIZE`` cho phép ghi đè sau khi benchmark hạ tầng thực tế.
-        """
-        if self.batch_size > 0:
-            return self.batch_size
-        return 3 if self.device.startswith("cuda") else 1
-
     def detect(
         self,
         img: Image.Image,
         confidence: float,
         room_type: str | None = None,
     ) -> list[dict]:
-        """Chạy detection một ảnh; dùng chung code path với ``detect_batch``."""
-        return self.detect_batch([img], confidence=confidence, room_type=room_type)[0]
-
-    def detect_batch(
-        self,
-        images: list[Image.Image],
-        confidence: float,
-        room_type: str | None = None,
-    ) -> list[list[dict]]:
-        """Detect nhiều ảnh độc lập trong cùng batch Grounding DINO.
-
-        Ảnh được tách thành micro-batch theo device. Mỗi kết quả post-process
-        vẫn có một phần tử riêng cho từng ảnh, sau đó được gộp theo image index;
-        không bao giờ trộn nhãn giữa các phòng.
-
-        Các ảnh trong một batch phải dùng chung ``room_type`` (và do đó chung
-        tập prompt). Caller có room khác nhau cần tách thành các batch nhỏ hơn.
-        """
+        """Chạy Grounding DINO cho một ảnh và quy đổi về các class chuẩn."""
         if self._model is None or self._processor is None:
             raise ModelNotReadyError("Model chưa được nạp.")
-        if not images:
-            return []
 
         import torch
 
-        prepared_images = [self._prepare_image(img) for img in images]
+        prepared_image = self._prepare_image(img)
         text_thresh = min(self.text_threshold, float(confidence))
-        best_by_image: list[dict[str, dict]] = [{} for _ in prepared_images]
-        effective_batch_size = min(self.inference_batch_size, len(prepared_images))
-        total_micro_batches = (
-            len(prepared_images) + effective_batch_size - 1
-        ) // effective_batch_size
+        best: dict[str, dict] = {}
 
         # Khi caller không chỉ định phòng, dùng prompt `default` gồm toàn bộ
         # CLASS_PROMPTS. Room cụ thể chỉ giới hạn nhãn khi nó được gửi rõ ràng.
@@ -511,81 +473,59 @@ class Detector:
 
         with self._lock, torch.no_grad():
             for idx, prompt_text in enumerate(prompts, 1):
-                for batch_number, start in enumerate(
-                    range(0, len(prepared_images), effective_batch_size), 1
-                ):
-                    end = start + effective_batch_size
-                    batch_images = prepared_images[start:end]
-                    logger.info(
-                        "[Grounding DINO] [%s] Micro-batch %d/%d, size %d, prompt (%d/%d): %s",
-                        resolved_room,
-                        batch_number,
-                        total_micro_batches,
-                        len(batch_images),
-                        idx,
-                        len(prompts),
-                        prompt_text,
-                    )
-                    # Processor nhận một text prompt tương ứng cho từng ảnh.
-                    # Các ảnh cùng micro-batch dùng cùng prompt chunk.
-                    inputs = self._processor(
-                        images=batch_images,
-                        text=[prompt_text] * len(batch_images),
-                        return_tensors="pt",
-                        images_kwargs={"size": self.image_size},
-                    ).to(self.device)
-                    outputs = self._model(**inputs)
-
-                    post_kwargs: dict = {
-                        "outputs": outputs,
-                        "input_ids": inputs.input_ids,
-                        "text_threshold": text_thresh,
-                        "target_sizes": [
-                            (img.height, img.width) for img in batch_images
-                        ],
-                    }
-                    if self._post_process_uses_threshold:
-                        post_kwargs["threshold"] = float(confidence)
-                    else:
-                        post_kwargs["box_threshold"] = float(confidence)
-
-                    results = self._processor.post_process_grounded_object_detection(**post_kwargs)
-                    if len(results) != len(batch_images):
-                        raise ArtifactError(
-                            "Grounding DINO trả số kết quả không khớp với micro-batch."
-                        )
-                    for local_index, result in enumerate(results):
-                        raw_labels = result.get("text_labels")
-                        if raw_labels is None:
-                            raw_labels = result.get("labels", [])
-                        scores = result.get("scores", [])
-
-                        for raw_label, score in zip(raw_labels, scores):
-                            cls_name = normalize_label(str(raw_label))
-                            if cls_name is None:
-                                continue
-                            conf = float(score.item() if hasattr(score, "item") else score)
-                            best = best_by_image[start + local_index]
-                            if cls_name not in best or conf > best[cls_name]["confidence"]:
-                                best[cls_name] = {"label": cls_name, "confidence": conf}
-
-        detected_by_image = [list(best.values()) for best in best_by_image]
-        for image_index, detected in enumerate(detected_by_image, 1):
-            if detected:
                 logger.info(
-                    "[Grounding DINO] [%s] Image %d/%d: detected %d objects: %s",
+                    "[Grounding DINO] [%s] Text prompt (%d/%d): %s",
                     resolved_room,
-                    image_index,
-                    len(detected_by_image),
-                    len(detected),
-                    ", ".join(f"{d['label']} ({d['confidence']:.2f})" for d in detected),
+                    idx,
+                    len(prompts),
+                    prompt_text,
                 )
-            else:
-                logger.info(
-                    "[Grounding DINO] [%s] Image %d/%d: no object over confidence=%.2f",
-                    resolved_room,
-                    image_index,
-                    len(detected_by_image),
-                    confidence,
-                )
-        return detected_by_image
+                inputs = self._processor(
+                    images=prepared_image,
+                    text=prompt_text,
+                    return_tensors="pt",
+                    images_kwargs={"size": self.image_size},
+                ).to(self.device)
+                outputs = self._model(**inputs)
+
+                post_kwargs: dict = {
+                    "outputs": outputs,
+                    "input_ids": inputs.input_ids,
+                    "text_threshold": text_thresh,
+                    "target_sizes": [(prepared_image.height, prepared_image.width)],
+                }
+                if self._post_process_uses_threshold:
+                    post_kwargs["threshold"] = float(confidence)
+                else:
+                    post_kwargs["box_threshold"] = float(confidence)
+
+                results = self._processor.post_process_grounded_object_detection(**post_kwargs)
+                result = results[0]
+                raw_labels = result.get("text_labels")
+                if raw_labels is None:
+                    raw_labels = result.get("labels", [])
+                scores = result.get("scores", [])
+
+                for raw_label, score in zip(raw_labels, scores):
+                    cls_name = normalize_label(str(raw_label))
+                    if cls_name is None:
+                        continue
+                    conf = float(score.item() if hasattr(score, "item") else score)
+                    if cls_name not in best or conf > best[cls_name]["confidence"]:
+                        best[cls_name] = {"label": cls_name, "confidence": conf}
+
+        detected = list(best.values())
+        if detected:
+            logger.info(
+                "[Grounding DINO] [%s] Detected %d objects: %s",
+                resolved_room,
+                len(detected),
+                ", ".join(f"{d['label']} ({d['confidence']:.2f})" for d in detected),
+            )
+        else:
+            logger.info(
+                "[Grounding DINO] [%s] No object over confidence=%.2f",
+                resolved_room,
+                confidence,
+            )
+        return detected
