@@ -116,6 +116,7 @@ async def _generate_recommendation_image(
         api_key=settings.qwen_api_key,
         timeout=settings.qwen_gateway_timeout_s,
         connect_timeout=settings.qwen_gateway_connect_timeout_s,
+        http_client=getattr(state, "qwen_http_client", None),
     )
     logger.info(
         "Qwen edit waiting for shared slot",

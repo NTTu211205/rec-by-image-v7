@@ -198,6 +198,11 @@ def test_checkpoint_classes_match_matrix() -> None:
     assert set(BEDROOM_CLASSES).issubset(set(CLASS_PROMPTS.keys()))
     assert "Sofa" in LIVING_ROOM_CLASSES and "Sofa" not in KITCHEN_CLASSES
     assert "Refrigerator" in KITCHEN_CLASSES and "Gas Stove" in KITCHEN_CLASSES
+    assert "Electric Cooktop" in KITCHEN_CLASSES
+    assert normalize_label("electric cooktop") == "Electric Cooktop"
+    assert normalize_label("built-in electric cooktop") == "Electric Cooktop"
+    assert normalize_label("glass ceramic cooktop") == "Electric Cooktop"
+    assert normalize_label("electric hot plate") == "Electric Cooktop"
     assert "Gas Stove" not in LIVING_ROOM_CLASSES
     assert "Bed" in BEDROOM_CLASSES
     assert "bedroom" in ROOM_CLASSES

@@ -7,6 +7,7 @@ import io
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -19,6 +20,7 @@ from app.services.qwen_image_edit import (
     QwenImageEditClient,
     build_room_edit_negative_prompt,
     build_room_edit_prompt,
+    dynamic_edit_size,
     extract_image_from_response,
     to_data_uri,
 )
@@ -59,6 +61,18 @@ def test_to_data_uri() -> None:
     assert uri_img.startswith("data:image/jpeg;base64,")
 
 
+def test_dynamic_edit_size_keeps_aspect_near_065_megapixel() -> None:
+    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "960x672"
+    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "928x704"
+    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "992x672"
+    assert dynamic_edit_size("https://example.com/room.jpg") is None
+
+    for size in ("960x672", "928x704", "992x672"):
+        width, height = (int(value) for value in size.split("x"))
+        assert width % 32 == 0 and height % 32 == 0
+        assert 600_000 <= width * height <= 700_000
+
+
 def test_extract_image_from_response() -> None:
     # Trường hợp images: [...]
     assert (
@@ -93,7 +107,7 @@ def test_qwen_mount_products_to_room_success() -> None:
 
         with patch("httpx.AsyncClient.post", mock_post):
             res = await client.mount_products_to_room(
-                room_image=b"room_bytes",
+                room_image=Image.new("RGB", (900, 628), color="white"),
                 products=[
                     {
                         "product_name": "Samsung Smart TV",
@@ -116,6 +130,7 @@ def test_qwen_mount_products_to_room_success() -> None:
             assert len(payload["images"]) == 3
             assert payload["images"][1] == "https://cdn.example.com/tv.jpg"
             assert payload["images"][2] == "https://cdn.example.com/speaker.jpg"
+            assert payload["size"] == "960x672"
             assert payload["steps"] == 8
             assert payload["cfg"] == 1.0
             assert mock_post.call_args.args[0].endswith("/v1/images/edits")
@@ -123,6 +138,33 @@ def test_qwen_mount_products_to_room_success() -> None:
             headers = call_kwargs["headers"]
             assert headers["apikey"] == "test-key"
             assert headers["Authorization"] == "Bearer test-key"
+
+    asyncio.run(_run())
+
+
+def test_qwen_reuses_injected_async_client() -> None:
+    async def _run() -> None:
+        shared_client = AsyncMock(spec=httpx.AsyncClient)
+        shared_client.post.return_value = FakeResponse(
+            {"data": [{"b64_json": "composed_b64"}]}
+        )
+        client = QwenImageEditClient(
+            "https://ai.itmwg.vn/ai-mwg/qwen-edit-image",
+            api_key="test-key",
+            http_client=shared_client,
+        )
+
+        result = await client.edit_image(
+            "keep the room unchanged",
+            [Image.new("RGB", (640, 480), color="white")],
+            size="800x608",
+        )
+
+        assert result.success is True
+        shared_client.post.assert_awaited_once()
+        call = shared_client.post.call_args
+        assert call.kwargs["json"]["size"] == "800x608"
+        assert isinstance(call.kwargs["timeout"], httpx.Timeout)
 
     asyncio.run(_run())
 

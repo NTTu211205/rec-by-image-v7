@@ -138,6 +138,13 @@ def test_detector_to_group_covers_proxies() -> None:
         assert code in DETECTOR_TO_GROUP.get(detector, ()), f"{detector} thiếu {code}"
 
 
+def test_electric_cooktop_maps_to_both_electric_cooker_categories() -> None:
+    assert DETECTOR_TO_GROUP["Electric Cooktop"] == [
+        "induction_cooker", "infrared_cooker",
+    ]
+    assert ROOM_LABEL_WEIGHTS["Electric Cooktop"] == {"kitchen": 4.0}
+
+
 # --- Công thức --------------------------------------------------------------
 
 def test_w_reads_injected_scores() -> None:

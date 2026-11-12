@@ -98,6 +98,9 @@ DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "Gas Stove": ["gas_stove"],
     "Induction Cooker": ["induction_cooker"],
     "Infrared Cooker": ["infrared_cooker"],
+    # Grounding DINO có thể nhận ra bếp điện nhưng không phân biệt được công
+    # nghệ mặt bếp; loại cả hai category tương ứng để tránh gợi ý trùng.
+    "Electric Cooktop": ["induction_cooker", "infrared_cooker"],
     "Microwave": ["microwave"],
     "Oven": ["oven"],
     "Range Hood": ["range_hood"],
@@ -119,7 +122,8 @@ DETECTOR_TO_GROUP: dict[str, list[str]] = {
 # detect, xem ``infer_room_type``.
 KITCHEN_ANCHOR_LABELS = frozenset({
     "Refrigerator", "Freezer", "Beverage Cooler", "Gas Stove", "Induction Cooker",
-    "Infrared Cooker", "Microwave", "Oven", "Range Hood", "Dishwasher", "Rice Cooker",
+    "Infrared Cooker", "Electric Cooktop", "Microwave", "Oven", "Range Hood",
+    "Dishwasher", "Rice Cooker",
     "Air Fryer", "Kettle", "Blender", "Juicer", "Soy Milk Maker", "Coffee Maker",
     "Water Purifier", "Water Dispenser",
 })

@@ -91,6 +91,19 @@ CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
     "Gas Stove": ("gas stove", "gas cooker", "gas range"),
     "Induction Cooker": ("induction cooker", "induction stove", "cooktop"),
     "Infrared Cooker": ("infrared cooker", "infrared stove"),
+    # Nhãn tổng quát cho bếp điện mặt kính/âm bàn khi ảnh không thể hiện rõ
+    # công nghệ induction hay infrared. Các cụm cụ thể giúp Grounding DINO bắt
+    # được cả bếp đơn đặt phẳng trên mặt bàn như ảnh nội thất thực tế.
+    "Electric Cooktop": (
+        "electric cooktop",
+        "electric stove",
+        "electric hob",
+        "built-in electric cooktop",
+        "glass ceramic cooktop",
+        "ceramic hob",
+        "electric hot plate",
+        "single burner electric cooktop",
+    ),
     "Microwave": ("microwave", "microwave oven"),
     "Oven": ("oven", "electric oven"),
     "Range Hood": ("range hood", "kitchen hood", "exhaust hood"),
@@ -166,13 +179,15 @@ LIVING_ROOM_CLASSES: tuple[str, ...] = (
 )
 
 KITCHEN_CLASSES: tuple[str, ...] = (
-    # 19 Thiết bị & gia dụng nhà bếp
+    # Nhãn thiết bị & gia dụng nhà bếp. Electric Cooktop là nhãn detector tổng
+    # quát, ánh xạ về hai category bếp điện hiện có trong recommender.
     "Refrigerator",
     "Freezer",
     "Beverage Cooler",
     "Gas Stove",
     "Induction Cooker",
     "Infrared Cooker",
+    "Electric Cooktop",
     "Microwave",
     "Oven",
     "Range Hood",

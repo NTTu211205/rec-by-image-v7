@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import httpx
+
 from app.core.config import Settings
 from app.core.exceptions import ArtifactError
 from app.services.cooccurrence import (
@@ -54,12 +56,29 @@ class AppState:
     # Semaphore này thuộc AppState nên được chia sẻ giữa các route/request,
     # thay vì tạo mới theo từng batch và vô tình vượt giới hạn gateway.
     qwen_edit_semaphore: asyncio.Semaphore = field(init=False, repr=False)
+    qwen_http_client: httpx.AsyncClient = field(init=False, repr=False)
     pending: int = 0
     _pending_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         self.qwen_edit_semaphore = asyncio.Semaphore(
             self.settings.qwen_max_concurrent_edits
+        )
+        timeout = httpx.Timeout(
+            self.settings.qwen_gateway_timeout_s,
+            connect=min(
+                self.settings.qwen_gateway_connect_timeout_s,
+                self.settings.qwen_gateway_timeout_s,
+            ),
+        )
+        connection_limit = self.settings.qwen_max_concurrent_edits
+        self.qwen_http_client = httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(
+                max_connections=connection_limit,
+                max_keepalive_connections=connection_limit,
+                keepalive_expiry=30.0,
+            ),
         )
 
     @property

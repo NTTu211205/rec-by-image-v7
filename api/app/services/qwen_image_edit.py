@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -19,6 +20,10 @@ logger = logging.getLogger("app.qwen_image_edit")
 
 DEFAULT_GATEWAY_URL = ""
 DEFAULT_API_KEY = ""
+DEFAULT_EDIT_TARGET_PIXELS = 650_000
+EDIT_SIZE_MULTIPLE = 32
+EDIT_MIN_SIDE = 256
+EDIT_MAX_SIDE = 2048
 
 from app.services.prompt_builder import (
     DEFAULT_ROOM_EDIT_NEGATIVE_PROMPT,
@@ -40,6 +45,55 @@ def optimize_image(img: Image.Image, max_side: int = 1024) -> Image.Image:
         new_h = (new_h // 32) * 32 or 32
         return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     return img
+
+
+def dynamic_edit_size(
+    image_input: bytes | Image.Image | str,
+    target_pixels: int = DEFAULT_EDIT_TARGET_PIXELS,
+) -> str | None:
+    """Tạo ``WIDTHxHEIGHT`` gần 0,65MP, giữ tỷ lệ và bội số 32.
+
+    Gateway chỉ chấp nhận cạnh 256–2048 và bội số 32. URL không mang thông tin
+    kích thước nên trả ``None``; pipeline chính luôn truyền PIL Image của phòng.
+    """
+    try:
+        if isinstance(image_input, Image.Image):
+            width, height = image_input.size
+        elif isinstance(image_input, bytes):
+            with Image.open(BytesIO(image_input)) as image:
+                width, height = image.size
+        else:
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+
+    if width <= 0 or height <= 0 or target_pixels <= 0:
+        return None
+
+    aspect = width / height
+    ideal_width = math.sqrt(target_pixels * aspect)
+    ideal_height = math.sqrt(target_pixels / aspect)
+
+    def candidates(value: float) -> list[int]:
+        center = round(value / EDIT_SIZE_MULTIPLE) * EDIT_SIZE_MULTIPLE
+        return sorted({
+            max(EDIT_MIN_SIDE, min(EDIT_MAX_SIDE, center + offset))
+            for offset in (-EDIT_SIZE_MULTIPLE, 0, EDIT_SIZE_MULTIPLE)
+        })
+
+    # Ưu tiên giữ tỷ lệ (hệ số 4), sau đó mới tối thiểu sai lệch số pixel.
+    best_width, best_height = min(
+        (
+            (candidate_width, candidate_height)
+            for candidate_width in candidates(ideal_width)
+            for candidate_height in candidates(ideal_height)
+        ),
+        key=lambda size: (
+            4.0 * abs(math.log((size[0] / size[1]) / aspect))
+            + abs(math.log((size[0] * size[1]) / target_pixels))
+        ),
+    )
+    return f"{best_width}x{best_height}"
 
 
 def to_data_uri(image_input: bytes | Image.Image | str, format: str = "JPEG") -> str:
@@ -123,12 +177,14 @@ class QwenImageEditClient:
         timeout: float = 60.0,
         connect_timeout: float = 10.0,
         auth_token: str | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         self.connect_timeout = connect_timeout
         self.auth_token = auth_token
+        self.http_client = http_client
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -183,24 +239,38 @@ class QwenImageEditClient:
             payload["cfg"] = cfg
 
         url = f"{self.base_url}/v1/images/edits"
-        logger.info("Gọi Qwen Image Edit /v1/images/edits: prompt=%r, images_count=%d", prompt, len(uris))
+        logger.info(
+            "Gọi Qwen Image Edit /v1/images/edits: prompt=%r, images_count=%d, size=%s",
+            prompt,
+            len(uris),
+            size or "gateway-default",
+        )
 
         try:
-            async with httpx.AsyncClient(timeout=self._timeout()) as client:
-                resp = await client.post(url, json=payload, headers=self._headers())
-                if resp.status_code != 200:
-                    err_msg = f"Gateway HTTP {resp.status_code}: {resp.text[:300]}"
-                    logger.warning("Qwen Gateway trả lỗi: %s", err_msg)
-                    return PlaceResult(success=False, prompt=prompt, error=err_msg)
-
-                raw_json = resp.json()
-                img = extract_image_from_response(raw_json)
-                return PlaceResult(
-                    success=True,
-                    generated_image=img,
-                    prompt=prompt,
-                    gateway_response=raw_json if isinstance(raw_json, dict) else {"response": raw_json},
+            if self.http_client is not None:
+                resp = await self.http_client.post(
+                    url,
+                    json=payload,
+                    headers=self._headers(),
+                    timeout=self._timeout(),
                 )
+            else:
+                async with httpx.AsyncClient(timeout=self._timeout()) as client:
+                    resp = await client.post(url, json=payload, headers=self._headers())
+
+            if resp.status_code != 200:
+                err_msg = f"Gateway HTTP {resp.status_code}: {resp.text[:300]}"
+                logger.warning("Qwen Gateway trả lỗi: %s", err_msg)
+                return PlaceResult(success=False, prompt=prompt, error=err_msg)
+
+            raw_json = resp.json()
+            img = extract_image_from_response(raw_json)
+            return PlaceResult(
+                success=True,
+                generated_image=img,
+                prompt=prompt,
+                gateway_response=raw_json if isinstance(raw_json, dict) else {"response": raw_json},
+            )
         except httpx.ConnectError as exc:
             err = f"Không kết nối được Qwen Gateway tại {self.base_url}: {exc}"
             logger.warning(err)
@@ -267,10 +337,11 @@ class QwenImageEditClient:
         primary_name = selected_products[0].get("product_name")
         primary_placement = selected_products[0].get("placement")
 
+        resolved_size = size if size is not None else dynamic_edit_size(room_image)
         result = await self.edit_image(
             prompt=final_prompt,
             images=images_list,
-            size=size,
+            size=resolved_size,
             n=n,
             seed=seed,
             steps=steps,
