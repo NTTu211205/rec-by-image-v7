@@ -70,7 +70,7 @@ def test_scores_load_from_json() -> None:
     assert table.source.startswith("category_room_scores.json")
     for name, scores in table.by_name.items():
         assert set(scores) == set(ROOM_CODES), name
-        assert all(0.0 <= v <= 1.0 for v in scores.values()), name
+        assert all(-1.0 <= v <= 1.0 for v in scores.values()), name
 
 
 def test_scores_json_matches_known_values() -> None:
@@ -84,9 +84,32 @@ def test_scores_json_matches_known_values() -> None:
     assert table.by_name["Quạt điện"]["living_room"] == 0.92
     assert table.by_name["Loa karaoke"]["living_room"] == 0.5
     assert table.by_name["Bóng đèn LED"] == {
-        "living_room": 0.05, "bedroom": 0.25, "kitchen": 0.1,
+        "living_room": 0.05, "bedroom": 0.25, "kitchen": -1.0,
     }
     assert table.by_name["Tủ lạnh"]["kitchen"] == 1.0
+
+
+def test_only_kitchen_appliances_have_positive_kitchen_score() -> None:
+    table = load_room_scores(SCORES_PATH)
+    kitchen_categories = {
+        "Bếp gas", "Bếp hồng ngoại", "Bếp từ", "Cây nước nóng lạnh",
+        "Lò nướng", "Lò vi sóng", "Máy hút mùi", "Máy làm sữa hạt",
+        "Máy lọc nước", "Máy pha cà phê", "Máy rửa chén",
+        "Máy xay sinh tố", "Máy ép trái cây", "Nồi chiên không dầu",
+        "Nồi cơm điện", "Tủ lạnh", "Tủ mát", "Tủ đông", "Ấm đun nước",
+    }
+
+    positive = {
+        name for name, scores in table.by_name.items()
+        if scores["kitchen"] > 0.0
+    }
+    assert positive == kitchen_categories
+    assert all(table.by_name[name]["kitchen"] >= 0.8 for name in positive)
+    assert all(
+        scores["kitchen"] == -1.0
+        for name, scores in table.by_name.items()
+        if name not in kitchen_categories
+    )
 
 
 def test_room_codes_count() -> None:
@@ -117,7 +140,7 @@ def test_scores_out_of_range_raises(tmp_path: Path) -> None:
     bad = tmp_path / "ngoai_mien.json"
     row = {room: 0.5 for room in ROOM_CODES} | {"living_room": 2.0}
     bad.write_text(json.dumps({"TV": row}), encoding="utf-8")
-    with pytest.raises(ArtifactError, match="ngoài \\[0, 1\\]"):
+    with pytest.raises(ArtifactError, match="ngoài \\[-1, 1\\]"):
         load_room_scores(bad)
 
 

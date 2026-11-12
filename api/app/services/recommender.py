@@ -147,7 +147,9 @@ ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
     "Cabinet": {"kitchen": 0.5, "bedroom": 0.2},
     "Mirror": {"bedroom": 0.5},
     "Rug": {"living_room": 0.4, "bedroom": 0.4},
-    "Plant": {"living_room": 0.2, "bedroom": 0.1},
+    # Cây xanh thường là điểm nhấn trang trí ở phòng khách. Giữ tín hiệu phòng
+    # ngủ thấp nhưng tăng living_room để Plant có ý nghĩa trong ảnh hỗn hợp.
+    "Plant": {"living_room": 0.8, "bedroom": 0.1},
     "Planter": {"living_room": 0.2, "bedroom": 0.1},
 }
 

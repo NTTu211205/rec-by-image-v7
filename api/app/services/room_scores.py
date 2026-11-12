@@ -5,9 +5,13 @@ artifact sinh ra, khoá ngoài là **tên hiển thị nhóm** (`"TV"`, `"Loa"`,
 `"Máy chiếu"`…), khoá trong là 3 mã phòng được hỗ trợ.
 
     {
-      "TV": {"living_room": 1.0, "bedroom": 0.8, "kitchen": 0.1, ...},
+      "TV": {"living_room": 1.0, "bedroom": 0.8, "kitchen": -1.0, ...},
       "Loa": {...}
     }
+
+Điểm âm biểu diễn penalty cho category không phù hợp với phòng. Ví dụ nhóm
+ngoài bếp có thể dùng ``kitchen = -1.0`` để triệt tiêu phần điểm đồng xuất hiện
+mà không cần hard-filter category khỏi pipeline xếp hạng.
 
 Vì khoá là tên chứ không phải `group_code`, module này KHÔNG tự ánh xạ: nó đọc
 bảng theo tên rồi để `product_catalog` ghép với `mwg.categories`
@@ -76,7 +80,7 @@ class RoomScoreTable:
 
 
 def _validate(by_name: dict, path: Path) -> dict[str, dict[str, float]]:
-    """Mọi nhóm phải có đủ 3 phòng được hỗ trợ, giá trị số trong [0, 1]."""
+    """Mọi nhóm phải có đủ 3 phòng, giá trị số trong [-1, 1]."""
     expected = set(ROOM_CODES)
     checked: dict[str, dict[str, float]] = {}
 
@@ -100,9 +104,9 @@ def _validate(by_name: dict, path: Path) -> dict[str, dict[str, float]]:
                 raise ArtifactError(
                     f"{path.name}: điểm '{name}/{room}' không phải số ({value!r})."
                 ) from exc
-            if not 0.0 <= score <= 1.0:
+            if not -1.0 <= score <= 1.0:
                 raise ArtifactError(
-                    f"{path.name}: điểm '{name}/{room}' = {score} ngoài [0, 1]."
+                    f"{path.name}: điểm '{name}/{room}' = {score} ngoài [-1, 1]."
                 )
             row[room] = score
         checked[str(name)] = row

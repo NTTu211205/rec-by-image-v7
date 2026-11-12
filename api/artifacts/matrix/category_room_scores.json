@@ -2,17 +2,17 @@
   "Bàn chải đánh răng điện": {
     "living_room": 0.1,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Bàn ủi": {
     "living_room": 0.1,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Bóng đèn LED": {
     "living_room": 0.05,
     "bedroom": 0.25,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Bếp gas": {
     "living_room": 0.1,
@@ -32,27 +32,27 @@
   "Bồn ngâm chân": {
     "living_room": 0.4,
     "bedroom": 0.8,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Bộ lau nhà": {
     "living_room": 0.8,
     "bedroom": 0.8,
-    "kitchen": 0.8
+    "kitchen": -1.0
   },
   "Camera ngoài trời": {
     "living_room": 0.4,
     "bedroom": 0.4,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Camera trong nhà": {
     "living_room": 0.8,
     "bedroom": 0.8,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Cân sức khỏe": {
     "living_room": 0.2,
     "bedroom": 0.8,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Cây nước nóng lạnh": {
     "living_room": 0.6,
@@ -62,32 +62,32 @@
   "Ghế massage": {
     "living_room": 0.88,
     "bedroom": 0.5,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Hộp đựng đồ": {
     "living_room": 0.5,
     "bedroom": 0.8,
-    "kitchen": 0.8
+    "kitchen": -1.0
   },
   "Khay/kệ đựng đồ": {
     "living_room": 0.2,
     "bedroom": 0.2,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Laptop": {
     "living_room": 0.6,
     "bedroom": 0.6,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Loa": {
     "living_room": 0.9,
     "bedroom": 0.7,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Loa karaoke": {
     "living_room": 0.5,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Lò nướng": {
     "living_room": 0.1,
@@ -102,37 +102,37 @@
   "Microphone": {
     "living_room": 0.8,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Màn hình máy tính": {
     "living_room": 0.6,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy chiếu": {
     "living_room": 0.1,
     "bedroom": 0.9,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy chơi game": {
     "living_room": 0.8,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy cạo râu": {
     "living_room": 0.1,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy giặt": {
     "living_room": 0.2,
     "bedroom": 0.4,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Máy hút bụi": {
     "living_room": 0.7,
     "bedroom": 0.7,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Máy hút mùi": {
     "living_room": 0.1,
@@ -142,7 +142,7 @@
   "Máy hút ẩm": {
     "living_room": 0.8,
     "bedroom": 0.8,
-    "kitchen": 0.7
+    "kitchen": -1.0
   },
   "Máy làm sữa hạt": {
     "living_room": 0.1,
@@ -152,7 +152,7 @@
   "Máy lọc không khí": {
     "living_room": 0.94,
     "bedroom": 1.0,
-    "kitchen": 0.6
+    "kitchen": -1.0
   },
   "Máy lọc nước": {
     "living_room": 0.4,
@@ -162,7 +162,7 @@
   "Máy nước nóng": {
     "living_room": 0.1,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy pha cà phê": {
     "living_room": 0.6,
@@ -177,37 +177,37 @@
   "Máy rửa mặt": {
     "living_room": 0.1,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy sấy quần áo": {
     "living_room": 0.2,
     "bedroom": 0.4,
-    "kitchen": 0.2
+    "kitchen": -1.0
   },
   "Máy sấy tóc": {
     "living_room": 0.1,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy tính để bàn": {
     "living_room": 0.4,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy tăm nước": {
     "living_room": 0.1,
     "bedroom": 0.4,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy tạo kiểu tóc": {
     "living_room": 0.1,
     "bedroom": 0.8,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy tỉa lông": {
     "living_room": 0.1,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Máy xay sinh tố": {
     "living_room": 0.1,
@@ -222,7 +222,7 @@
   "Máy điều hòa": {
     "living_room": 0.98,
     "bedroom": 1.0,
-    "kitchen": 0.6
+    "kitchen": -1.0
   },
   "Nồi chiên không dầu": {
     "living_room": 0.1,
@@ -237,42 +237,42 @@
   "Quạt sưởi": {
     "living_room": 0.6,
     "bedroom": 0.7,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Quạt trần": {
     "living_room": 0.7,
     "bedroom": 0.5,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Quạt điều hòa": {
     "living_room": 0.92,
     "bedroom": 0.6,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Quạt điện": {
     "living_room": 0.92,
     "bedroom": 0.8,
-    "kitchen": 0.5
+    "kitchen": -1.0
   },
   "Robot hút bụi": {
     "living_room": 0.9,
     "bedroom": 1.0,
-    "kitchen": 0.8
+    "kitchen": -1.0
   },
   "TV": {
     "living_room": 1.0,
     "bedroom": 0.6,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Thiết bị massage": {
     "living_room": 0.6,
     "bedroom": 0.8,
-    "kitchen": 0.1
+    "kitchen": -1.0
   },
   "Thùng rác": {
     "living_room": 0.8,
     "bedroom": 0.8,
-    "kitchen": 0.7
+    "kitchen": -1.0
   },
   "Tủ lạnh": {
     "living_room": 0.4,
@@ -292,12 +292,12 @@
   "Đèn năng lượng mặt trời": {
     "living_room": 0.1,
     "bedroom": 0.4,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Đèn điện/đèn sạc": {
     "living_room": 0.2,
     "bedroom": 0.4,
-    "kitchen": 0.4
+    "kitchen": -1.0
   },
   "Ấm đun nước": {
     "living_room": 0.4,
@@ -307,6 +307,6 @@
   "Ổ cắm điện": {
     "living_room": 0.5,
     "bedroom": 0.5,
-    "kitchen": 0.8
+    "kitchen": -1.0
   }
 }

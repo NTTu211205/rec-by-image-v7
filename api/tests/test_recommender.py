@@ -45,6 +45,12 @@ def _catalog() -> Catalog:
              "price": 8_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
         ],
+        "rice_cooker": [
+            {"product_id": "R1", "category_id": "54", "category_name": "Nồi cơm điện",
+             "product_name": "Nồi cơm", "brand": "F", "price": 2_500_000.0,
+             "currency": "VND", "image_url": "", "product_url": "",
+             "availability": True},
+        ],
     }
     return Catalog(products, source="fixture")
 
@@ -81,11 +87,16 @@ def _room_scores() -> dict[str, dict[str, float]]:
     def row(living_room: float) -> dict[str, float]:
         return {room: 0.0 for room in ROOM_CODES} | {"living_room": living_room}
 
-    return {
+    scores = {
         "tv": row(0.9),
         "speaker": row(0.7),
         "air_conditioner": row(0.5),
+        "rice_cooker": row(0.0),
     }
+    for code in ("tv", "speaker", "air_conditioner"):
+        scores[code]["kitchen"] = -1.0
+    scores["rice_cooker"]["kitchen"] = 1.0
+    return scores
 
 
 def _recommender(**kwargs) -> Recommender:
@@ -153,6 +164,18 @@ def test_infer_room_type_uses_detected_room_anchors() -> None:
     assert room == "bedroom"
     assert scores["bedroom"] > scores["living_room"]
     assert set(scores) == set(ROOM_CODES)
+
+
+def test_infer_room_type_plant_strengthens_living_room_signal() -> None:
+    rec = _recommender()
+
+    room, scores = rec.infer_room_type([
+        {"label": "Plant", "confidence": 1.0},
+    ])
+
+    assert ROOM_LABEL_WEIGHTS["Plant"] == {"living_room": 0.8, "bedroom": 0.1}
+    assert room == "living_room"
+    assert scores == {"living_room": 0.8, "bedroom": 0.1, "kitchen": 0.0}
 
 
 def test_infer_room_type_falls_back_when_no_room_signal() -> None:
@@ -258,8 +281,28 @@ def test_keeps_detected_when_disabled() -> None:
 
 def test_min_score_filters() -> None:
     rec = _recommender()
-    out = rec.recommend([], room_type="kitchen", top_k=10, min_score=0.5)
+    out = rec.recommend([], room_type="kitchen", top_k=10, min_score=1.1)
     assert out["recommendations"] == []
+
+
+def test_kitchen_room_score_prioritizes_kitchen_groups() -> None:
+    rec = _recommender()
+    out = rec.recommend(
+        [],
+        room_type="kitchen",
+        top_k=10,
+        exclude_detected=False,
+    )
+    assert [item["group_code"] for item in out["recommendations"]] == ["rice_cooker"]
+
+
+def test_kitchen_uses_scores_instead_of_hard_group_filter() -> None:
+    rec = _recommender()
+    out = rec.recommend(
+        [], room_type="kitchen", top_k=10, min_score=-1, exclude_detected=False,
+    )
+    codes = {item["group_code"] for item in out["recommendations"]}
+    assert codes == {"rice_cooker", "tv", "speaker", "air_conditioner"}
 
 
 def test_products_exclude_unavailable_and_sorted_by_price() -> None:
