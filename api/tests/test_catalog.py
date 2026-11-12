@@ -83,6 +83,9 @@ def test_scores_json_matches_known_values() -> None:
     assert table.by_name["Máy lọc không khí"]["living_room"] == 0.94
     assert table.by_name["Quạt điện"]["living_room"] == 0.92
     assert table.by_name["Loa karaoke"]["living_room"] == 0.5
+    assert table.by_name["Bóng đèn LED"] == {
+        "living_room": 0.05, "bedroom": 0.25, "kitchen": 0.1,
+    }
     assert table.by_name["Tủ lạnh"]["kitchen"] == 1.0
 
 

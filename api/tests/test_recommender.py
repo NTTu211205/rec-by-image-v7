@@ -12,6 +12,7 @@ from app.services import group_scores
 from app.services.product_catalog import Catalog
 from app.services.room_scores import ROOM_CODES
 from app.services.recommender import (
+    COOCCURRENCE_WEIGHTS,
     DETECTOR_TO_GROUP,
     GROUPS_WITHOUT_DETECTOR,
     GROUP_TO_DETECTOR,
@@ -24,23 +25,23 @@ def _catalog() -> Catalog:
     """Catalog nhỏ: 3 nhóm, nhóm `tv` có 2 sản phẩm (1 hết hàng)."""
     products = {
         "tv": [
-            {"product_id": "T1", "product_name": "TV đắt", "brand": "A",
+            {"product_id": "T1", "category_id": "37", "category_name": "Tivi", "product_name": "TV đắt", "brand": "A",
              "price": 9_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
-            {"product_id": "T2", "product_name": "TV rẻ", "brand": "B",
+            {"product_id": "T2", "category_id": "38", "category_name": "Tivi", "product_name": "TV rẻ", "brand": "B",
              "price": 3_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
-            {"product_id": "T3", "product_name": "TV hết hàng", "brand": "C",
+            {"product_id": "T3", "category_id": "37", "category_name": "Tivi", "product_name": "TV hết hàng", "brand": "C",
              "price": 1_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": False},
         ],
         "speaker": [
-            {"product_id": "S1", "product_name": "Loa", "brand": "D",
+            {"product_id": "S1", "category_id": "132", "category_name": "Loa", "product_name": "Loa", "brand": "D",
              "price": 2_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
         ],
         "air_conditioner": [
-            {"product_id": "A1", "product_name": "Điều hoà", "brand": "E",
+            {"product_id": "A1", "category_id": "36", "category_name": "Máy lạnh", "product_name": "Điều hoà", "brand": "E",
              "price": 8_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
         ],
@@ -199,6 +200,23 @@ def test_cooccurrence_zero_without_proxy() -> None:
     assert rec.cooccurrence_score(["TV"], "air_fryer") == 0.0
 
 
+def test_led_bulb_cooccurrence_is_downweighted() -> None:
+    cooc = {
+        "classes": ["TV", "Light"],
+        "matrix": [[1.0, 0.8], [0.8, 1.0]],
+        "support": {"TV": 10, "Light": 10},
+        "counts": {"TV": {"TV": 10, "Light": 8}, "Light": {"TV": 8, "Light": 10}},
+        "base_rate": {"TV": 0.2, "Light": 0.2},
+        "n_images": 50,
+    }
+    rec = Recommender(cooc, _catalog(), room_scores=_room_scores())
+
+    assert COOCCURRENCE_WEIGHTS["led_bulb"] == 0.25
+    assert rec.cooccurrence_score(["TV"], "led_bulb") == pytest.approx(
+        rec.p_smoothed("TV", "Light") * 0.25
+    )
+
+
 # --- Xếp hạng ---------------------------------------------------------------
 
 def test_excluded_fields_not_in_recommendations() -> None:
@@ -288,7 +306,18 @@ def test_category_filter() -> None:
     out = rec.recommend([], room_type="living_room", top_k=20, min_score=0,
                         category_id="electronics")
     assert out["recommendations"]
-    assert all(i["category_id"] == "electronics" for i in out["recommendations"])
+    assert all(i["group_category_id"] == "electronics" for i in out["recommendations"])
+
+
+def test_response_uses_actual_db_category_id() -> None:
+    rec = _recommender()
+    out = rec.recommend([], room_type="living_room", top_k=10, min_score=0)
+    tv = next(item for item in out["recommendations"] if item["group_code"] == "tv")
+
+    # TV rẻ là sản phẩm ưu tiên sau khi sort giá; ID 38 phải đi thẳng từ DB.
+    assert tv["category_id"] == "38"
+    assert tv["group_category_id"] == "electronics"
+    assert tv["products"][0]["category_id"] == "38"
 
 
 def test_reason_mentions_detected_object() -> None:
@@ -319,7 +348,8 @@ def test_response_shape() -> None:
     assert out["detected_objects"] == detected
     item = out["recommendations"][0]
     assert set(item) == {
-        "group_code", "group_name", "category_id", "cooccurrence_score", "products",
+        "group_code", "group_name", "category_id", "group_category_id",
+        "cooccurrence_score", "products",
     }
 
 

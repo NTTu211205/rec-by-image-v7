@@ -139,6 +139,23 @@ Các tham số tuỳ chọn:
 - `generate_image`: `true` để kích hoạt AI ghép sản phẩm vào ảnh phòng.
 - `edit_prompt`: Chuỗi prompt tùy biến nếu muốn ghi đè prompt mặc định.
 
+### Batch ba phòng
+
+`POST /api/v1/recommendations/images/auto` nhận đúng ba field ảnh cùng tên `images`, tự xác định loại phòng từng ảnh, rồi ghép sản phẩm cho từng ảnh:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/images/auto?top_k=5&product_per_group=3" \
+  -F "images=@phong-1.jpg" -F "images=@phong-2.jpg" -F "images=@phong-3.jpg"
+```
+
+`POST /api/v1/recommendations/images/by-room` nhận thêm đúng ba `room_types` theo cùng thứ tự ảnh:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/recommendations/images/by-room?top_k=5&product_per_group=3" \
+  -F "images=@phong-khach.jpg" -F "images=@phong-ngu.jpg" -F "images=@bep.jpg" \
+  -F "room_types=living_room" -F "room_types=bedroom" -F "room_types=kitchen"
+```
+
 ---
 
 ## Cơ chế Phối cảnh Thông minh (`ImageEditPromptBuilder`)

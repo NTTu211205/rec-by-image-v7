@@ -95,7 +95,6 @@ class Catalog:
         self.available: dict[str, list[Product]] = {
             g: [p for p in items if p["availability"]] for g, items in groups.items()
         }
-
     @property
     def group_codes(self) -> list[str]:
         return sorted(self.groups)
@@ -107,8 +106,12 @@ class Catalog:
 
 def _row_to_product(row: dict) -> Product:
     """Chuẩn hoá một dòng DB về shape mà recommender dùng."""
+    category_id = row.get("category_id")
+    category_name = row.get("category_name")
     return {
         "product_id": str(row["product_id"]).strip(),
+        "category_id": str(category_id).strip() if category_id is not None else None,
+        "category_name": str(category_name).strip() if category_name else None,
         "product_name": str(row["product_name"]).strip(),
         "brand": str(row.get("brand_name") or row.get("brand") or "Điện máy XANH").strip(),
         "price": float(row["price"]),
@@ -157,6 +160,7 @@ def load_catalog_from_db(cfg: dict, schema: str = "public") -> Catalog:
                 cur.execute(
                     f"""
                     SELECT p.product_id,
+                           p.category_id,
                            p."tên sản phẩm" AS product_name,
                            COALESCE(NULLIF(p.brand, ''), 'Điện máy XANH') AS brand_name,
                            COALESCE(NULLIF(p."Giá khuyến mãi", 0), NULLIF(p."Giá gốc", 0), 0) AS price,
@@ -192,6 +196,7 @@ def load_catalog_from_db(cfg: dict, schema: str = "public") -> Catalog:
                 cur.execute(
                     f"""
                     SELECT p.product_id,
+                           p.category_id,
                            p.product_name,
                            b.brand_name,
                            p.price,
@@ -221,9 +226,10 @@ def load_catalog_from_db(cfg: dict, schema: str = "public") -> Catalog:
 
 
 def load_category_names(cfg: dict, schema: str = "public") -> dict[str, str]:
-    """Tên hiển thị (`TV`, `Loa`...) -> `group_code` (`tv`, `speaker`...).
+    """Tên group hiển thị -> group_code nội bộ để nối bảng W(c, r).
 
-    Đảm bảo đầy đủ 62 nhóm để khớp với `category_room_scores.json`.
+    `category_id` thật của DB được lấy trực tiếp từ từng dòng products; mapping
+    này chỉ phục vụ 62 group nội bộ khớp `category_room_scores.json`.
     """
     try:
         import psycopg2

@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 _EXAMPLE_PRODUCT = {
     "product_id": "DMX_00D536F1",
+    "category_id": "37",
+    "category_name": "Tivi",
     "product_name": "Samsung Smart TV UA32H5000F",
     "brand": "Samsung",
     "price": 4090000.0,
@@ -41,7 +43,8 @@ _EXAMPLE_RESPONSE = {
         {
             "group_code": "speaker",
             "group_name": "Loa",
-            "category_id": "electronics",
+            "category_id": "132",
+            "group_category_id": "electronics",
             "cooccurrence_score": 0.4123,
             "products": [_EXAMPLE_PRODUCT],
         }
@@ -59,6 +62,8 @@ class Product(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": _EXAMPLE_PRODUCT})
 
     product_id: str = Field(..., description="Mã sản phẩm", examples=["DMX_00D536F1"])
+    category_id: str | None = Field(None, description="Mã category thật từ DB.", examples=["37"])
+    category_name: str | None = Field(None, description="Tên category thật từ DB.", examples=["Tivi"])
     product_name: str = Field(..., description="Tên sản phẩm", examples=["Samsung Smart TV UA32H5000F"])
     brand: str = Field(..., description="Thương hiệu", examples=["Samsung"])
     price: float = Field(..., description="Giá niêm yết", examples=[4090000.0])
@@ -73,7 +78,10 @@ class RecommendationItem(BaseModel):
     group_code: str = Field(..., description="Mã nhóm (= subcategory)", examples=["tv"])
     group_name: str = Field(..., description="Tên nhóm hiển thị", examples=["TV"])
     category_id: str | None = Field(
-        None, description="Category chứa nhóm", examples=["electronics"]
+        None, description="Category DB của sản phẩm ưu tiên trong group.", examples=["37"]
+    )
+    group_category_id: str | None = Field(
+        None, description="Nhóm category nội bộ dùng để lọc và xếp hạng.", examples=["electronics"]
     )
     cooccurrence_score: float = Field(
         ..., description="`P_cooc(c | D)` — Noisy-OR (Cell 10.9).", examples=[0.4123]
@@ -126,6 +134,17 @@ class RecommendationResponse(BaseModel):
         None,
         description="Câu prompt đã dùng để chỉnh sửa ảnh qua /v1/images/edits.",
         examples=["Mount product in picture 2, picture 3 to picture 1. Not changes room structure"],
+    )
+
+
+class ThreeRoomRecommendationResponse(BaseModel):
+    """Ba kết quả độc lập, giữ nguyên thứ tự ba ảnh đầu vào."""
+
+    results: list[RecommendationResponse] = Field(
+        ...,
+        min_length=3,
+        max_length=3,
+        description="Ba kết quả tương ứng lần lượt với ba ảnh đã gửi.",
     )
 
 

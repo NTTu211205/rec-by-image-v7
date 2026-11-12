@@ -10,9 +10,9 @@
     "kitchen": 0.1
   },
   "Bóng đèn LED": {
-    "living_room": 0.15,
-    "bedroom": 0.8,
-    "kitchen": 0.4
+    "living_room": 0.05,
+    "bedroom": 0.25,
+    "kitchen": 0.1
   },
   "Bếp gas": {
     "living_room": 0.1,
@@ -296,7 +296,7 @@
   },
   "Đèn điện/đèn sạc": {
     "living_room": 0.2,
-    "bedroom": 0.9,
+    "bedroom": 0.4,
     "kitchen": 0.4
   },
   "Ấm đun nước": {

@@ -15,6 +15,8 @@ from app.main import create_app
 EXPECTED_OPERATIONS = {
     ("get", "/health/ready"): "healthReady",
     ("post", "/api/v1/recommendations/image"): "recommendFromImage",
+    ("post", "/api/v1/recommendations/images/auto"): "recommendThreeRoomsAuto",
+    ("post", "/api/v1/recommendations/images/by-room"): "recommendThreeRoomsByType",
 }
 
 # Endpoint đã bỏ — phải 404, không được lọt lại vào schema.
@@ -76,7 +78,7 @@ def test_info_metadata(spec: dict) -> None:
     assert "Không có bước train" in description
 
 
-def test_only_two_operations(spec: dict) -> None:
+def test_documented_operations(spec: dict) -> None:
     assert spec["openapi"].startswith("3.")
     tags = {t["name"] for t in spec.get("tags", [])}
     assert tags == {"recommendations", "health"}
@@ -176,6 +178,22 @@ def test_image_endpoint_documents_body_and_query(spec: dict) -> None:
     assert {"room_type", "top_k", "min_score", "products_per_group", "confidence"} <= params
     # `image` nằm trong multipart body, không phải query.
     assert "image" not in params
+
+
+def test_three_image_endpoints_document_multipart_contract(spec: dict) -> None:
+    for path, operation_id in (
+        ("/api/v1/recommendations/images/auto", "recommendThreeRoomsAuto"),
+        ("/api/v1/recommendations/images/by-room", "recommendThreeRoomsByType"),
+    ):
+        operation = spec["paths"][path]["post"]
+        assert operation["operationId"] == operation_id
+        body = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+        assert body["$ref"].startswith("#/components/schemas/Body_")
+        params = {p["name"] for p in operation["parameters"]}
+        assert {"top_k", "product_per_group", "min_price", "max_price", "confidence"} <= params
+        body_name = body["$ref"].rsplit("/", 1)[-1]
+        image_items = spec["components"]["schemas"][body_name]["properties"]["images"]["items"]
+        assert image_items["format"] == "binary"
 
 
 def test_openapi_disabled_hides_docs() -> None:

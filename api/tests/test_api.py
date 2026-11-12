@@ -159,6 +159,32 @@ def test_image_required(client: TestClient) -> None:
     assert r.status_code == 422
 
 
+def test_three_images_auto_requires_exactly_three_images(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/recommendations/images/auto",
+        files=[
+            ("images", ("one.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("two.jpg", _jpeg(), "image/jpeg")),
+        ],
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_image"
+
+
+def test_three_images_by_room_requires_exactly_three_room_types(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/recommendations/images/by-room",
+        files=[
+            ("images", ("one.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("two.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("three.jpg", _jpeg(), "image/jpeg")),
+        ],
+        data=[("room_types", "living_room"), ("room_types", "bedroom")],
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_image"
+
+
 def test_cors_preflight_and_headers(client: TestClient) -> None:
     # Preflight OPTIONS
     r = client.options(

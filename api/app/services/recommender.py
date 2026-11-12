@@ -68,6 +68,13 @@ GROUP_TO_DETECTOR: dict[str, str] = {
     "power_strip": "Power Surge Protector",
 }
 
+# Hệ số điều chỉnh P_cooc theo category. Bóng đèn LED là thiết bị phụ trợ,
+# thường bị detector Light bắt quá rộng, nên giảm tác động đồng xuất hiện để
+# không lấn át các thiết bị chính trong gợi ý.
+COOCCURRENCE_WEIGHTS: dict[str, float] = {
+    "led_bulb": 0.25,
+}
+
 # Detector -> nhóm cần loại khỏi gợi ý vì đã có trong ảnh (Cell 10.2).
 DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "TV": ["tv", "projector"],
@@ -294,7 +301,8 @@ class Recommender:
         not_present = 1.0
         for label in detected_labels:
             not_present *= 1.0 - self.p_smoothed(label, proxy, alpha)
-        return 1.0 - not_present
+        raw_score = 1.0 - not_present
+        return raw_score * COOCCURRENCE_WEIGHTS.get(group_code, 1.0)
 
     def build_reason(
         self,
@@ -378,7 +386,7 @@ class Recommender:
             candidates.append({
                 "group_code": group_code,
                 "group_name": group_scores.group_name(group_code),
-                "category_id": group_scores.GROUP_CATEGORY.get(group_code),
+                "group_category_id": group_scores.GROUP_CATEGORY.get(group_code),
                 "cooccurrence_score": cooc,
                 "room_score": room_score,
                 "final_score": final_score,
@@ -414,12 +422,17 @@ class Recommender:
                 continue
             # Rẻ nhất trước: lựa chọn dễ tiếp cận hiển thị trước.
             products.sort(key=lambda p: p["price"])
+            selected_products = products[:products_per_group]
+            primary_product = selected_products[0]
             top.append({
                 "group_code": item["group_code"],
                 "group_name": item["group_name"],
-                "category_id": item["category_id"],
+                # category_id là giá trị thật từ DB của sản phẩm ưu tiên,
+                # không phải family tĩnh như `electronics` hoặc `appliance`.
+                "category_id": primary_product.get("category_id"),
+                "group_category_id": item["group_category_id"],
                 "cooccurrence_score": item["cooccurrence_score"],
-                "products": products[:products_per_group],
+                "products": selected_products,
             })
             if len(top) >= top_k:
                 break

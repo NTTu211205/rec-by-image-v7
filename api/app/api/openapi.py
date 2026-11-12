@@ -59,6 +59,26 @@ def _register_error_schemas(schema: dict[str, Any]) -> None:
     components["ErrorResponse"] = raw
 
 
+def _mark_multipart_images_as_binary(schema: dict[str, Any]) -> None:
+    """Tương thích Swagger UI: upload mảng file cần `format: binary`.
+
+    FastAPI/Pydantic phát OpenAPI 3.1 bằng ``contentMediaType``. Phiên bản
+    Swagger UI đang dùng không render nút chọn file cho mảng ảnh nếu thiếu
+    ``format: binary``, nên nó hiển thị ô nhập chuỗi/đường dẫn thay vì input
+    type=file. Chỉ bổ sung metadata tài liệu, không đổi payload API.
+    """
+    components = schema.get("components", {}).get("schemas", {})
+    for name in ("Body_recommendThreeRoomsAuto", "Body_recommendThreeRoomsByType"):
+        image_items = (
+            components.get(name, {})
+            .get("properties", {})
+            .get("images", {})
+            .get("items", {})
+        )
+        if image_items.get("type") == "string":
+            image_items["format"] = "binary"
+
+
 def configure_openapi(app: FastAPI) -> None:
     """Gắn metadata + phản hồi lỗi vào schema OpenAPI. Gọi một lần sau khi tạo app."""
 
@@ -89,6 +109,7 @@ def configure_openapi(app: FastAPI) -> None:
                 operation.setdefault("responses", {}).setdefault("503", ERROR_RESPONSES[503])
 
         _register_error_schemas(schema)
+        _mark_multipart_images_as_binary(schema)
 
         # Server dùng khi chạy `uvicorn --port 8000` tại máy.
         schema.setdefault("servers", [{"url": "/", "description": "Server hiện tại"}])
