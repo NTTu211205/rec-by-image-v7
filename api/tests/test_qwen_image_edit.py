@@ -61,16 +61,16 @@ def test_to_data_uri() -> None:
     assert uri_img.startswith("data:image/jpeg;base64,")
 
 
-def test_dynamic_edit_size_keeps_aspect_near_030_megapixel() -> None:
-    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "640x448"
-    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "640x480"
-    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "672x448"
+def test_dynamic_edit_size_keeps_aspect_near_048_megapixel() -> None:
+    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "832x576"
+    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "800x608"
+    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "832x576"
     assert dynamic_edit_size("https://example.com/room.jpg") is None
 
-    for size in ("640x448", "640x480", "672x448"):
+    for size in ("832x576", "800x608"):
         width, height = (int(value) for value in size.split("x"))
         assert width % 32 == 0 and height % 32 == 0
-        assert 280_000 <= width * height <= 320_000
+        assert 450_000 <= width * height <= 520_000
 
 
 def test_extract_image_from_response() -> None:
@@ -130,7 +130,7 @@ def test_qwen_mount_products_to_room_success() -> None:
             assert len(payload["images"]) == 3
             assert payload["images"][1] == "https://cdn.example.com/tv.jpg"
             assert payload["images"][2] == "https://cdn.example.com/speaker.jpg"
-            assert payload["size"] == "640x448"
+            assert payload["size"] == "832x576"
             assert payload["steps"] == 8
             assert payload["cfg"] == 1.0
             assert mock_post.call_args.args[0].endswith("/v1/images/edits")
