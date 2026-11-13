@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import io
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.core.config import Settings
 from app.main import create_app
-from app.services import group_scores
+from app.api.routes.recommendations import _generate_recommendation_image
+from app.schemas.recommendation import RecommendationResponse
 from app.services.qwen_image_edit import (
-    GROUP_PLACEMENT_PROFILES,
-    VALID_GATEWAY_PRODUCT_TYPES,
+    PlaceResult,
     QwenImageEditClient,
     build_room_edit_negative_prompt,
     build_room_edit_prompt,
+    dynamic_edit_size,
     extract_image_from_response,
     to_data_uri,
 )
@@ -40,17 +43,6 @@ def _jpeg(size: tuple[int, int] = (64, 64)) -> io.BytesIO:
     return buf
 
 
-def test_group_placement_profiles_coverage() -> None:
-    """Mọi nhóm trong catalog 62 nhóm đều phải có cấu hình placement và kiểu hợp lệ."""
-    catalog_groups = set(group_scores.GROUP_NAMES)
-    profile_groups = set(GROUP_PLACEMENT_PROFILES)
-    assert catalog_groups == profile_groups
-    for code, (ptype, pname, placement) in GROUP_PLACEMENT_PROFILES.items():
-        assert ptype in VALID_GATEWAY_PRODUCT_TYPES, f"{code} có product_type không hợp lệ: {ptype}"
-        assert pname, f"{code} thiếu product_name"
-        assert placement, f"{code} thiếu placement"
-
-
 def test_to_data_uri() -> None:
     # URL giữ nguyên
     assert to_data_uri("https://example.com/a.jpg") == "https://example.com/a.jpg"
@@ -67,6 +59,18 @@ def test_to_data_uri() -> None:
     img = Image.new("RGB", (32, 32), color="red")
     uri_img = to_data_uri(img)
     assert uri_img.startswith("data:image/jpeg;base64,")
+
+
+def test_dynamic_edit_size_keeps_aspect_near_048_megapixel() -> None:
+    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "832x576"
+    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "800x608"
+    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "832x576"
+    assert dynamic_edit_size("https://example.com/room.jpg") is None
+
+    for size in ("832x576", "800x608"):
+        width, height = (int(value) for value in size.split("x"))
+        assert width % 32 == 0 and height % 32 == 0
+        assert 450_000 <= width * height <= 520_000
 
 
 def test_extract_image_from_response() -> None:
@@ -103,7 +107,7 @@ def test_qwen_mount_products_to_room_success() -> None:
 
         with patch("httpx.AsyncClient.post", mock_post):
             res = await client.mount_products_to_room(
-                room_image=b"room_bytes",
+                room_image=Image.new("RGB", (900, 628), color="white"),
                 products=[
                     {
                         "product_name": "Samsung Smart TV",
@@ -126,8 +130,10 @@ def test_qwen_mount_products_to_room_success() -> None:
             assert len(payload["images"]) == 3
             assert payload["images"][1] == "https://cdn.example.com/tv.jpg"
             assert payload["images"][2] == "https://cdn.example.com/speaker.jpg"
+            assert payload["size"] == "832x576"
             assert payload["steps"] == 8
             assert payload["cfg"] == 1.0
+            assert mock_post.call_args.args[0].endswith("/v1/images/edits")
 
             headers = call_kwargs["headers"]
             assert headers["apikey"] == "test-key"
@@ -136,50 +142,68 @@ def test_qwen_mount_products_to_room_success() -> None:
     asyncio.run(_run())
 
 
-def test_qwen_place_product_success() -> None:
+def test_qwen_reuses_injected_async_client() -> None:
     async def _run() -> None:
-        client = QwenImageEditClient("https://ai.itmwg.vn/ai-mwg/qwen-edit-image", api_key="key")
-        mock_post = AsyncMock(
-            return_value=FakeResponse(
-                {"images": ["data:image/jpeg;base64,output_composed_photo"]}, status_code=200
-            )
+        shared_client = AsyncMock(spec=httpx.AsyncClient)
+        shared_client.post.return_value = FakeResponse(
+            {"data": [{"b64_json": "composed_b64"}]}
+        )
+        client = QwenImageEditClient(
+            "https://ai.itmwg.vn/ai-mwg/qwen-edit-image",
+            api_key="test-key",
+            http_client=shared_client,
         )
 
-        with patch("httpx.AsyncClient.post", mock_post):
-            res = await client.place_product(
-                room_image=_jpeg().getvalue(),
-                product_image="https://cdn.example.com/tv.jpg",
-                group_code="tv",
-            )
-            assert res.success is True
-            assert res.generated_image == "data:image/jpeg;base64,output_composed_photo"
-            assert res.product_name == "television"
+        result = await client.edit_image(
+            "keep the room unchanged",
+            [Image.new("RGB", (640, 480), color="white")],
+            size="800x608",
+        )
 
-            call_kwargs = mock_post.call_args.kwargs
-            payload = call_kwargs["json"]
-            assert payload["room"].startswith("data:image/jpeg;base64,")
-            assert payload["product"] == "https://cdn.example.com/tv.jpg"
-            assert payload["product_type"] == "tv"
-            assert payload["trim_product_border"] is True
+        assert result.success is True
+        shared_client.post.assert_awaited_once()
+        call = shared_client.post.call_args
+        assert call.kwargs["json"]["size"] == "800x608"
+        assert isinstance(call.kwargs["timeout"], httpx.Timeout)
 
     asyncio.run(_run())
 
 
-def test_qwen_place_product_gateway_error() -> None:
+def test_qwen_mount_refrigerator_and_rice_cooker_uses_one_edit() -> None:
+    """Cả hai sản phẩm được gửi trong một request images/edits duy nhất."""
     async def _run() -> None:
-        client = QwenImageEditClient("https://ai.itmwg.vn/ai-mwg/qwen-edit-image", api_key="key")
+        client = QwenImageEditClient("https://ai.itmwg.vn", api_key="test-key")
         mock_post = AsyncMock(
-            return_value=FakeResponse({}, status_code=500, text="Internal Server Error")
+            return_value=FakeResponse({"data": [{"b64_json": "composed_b64"}]})
         )
 
         with patch("httpx.AsyncClient.post", mock_post):
-            res = await client.place_product(
-                room_image=_jpeg().getvalue(),
-                product_image="https://cdn.example.com/tv.jpg",
-                group_code="tv",
+            result = await client.mount_products_to_room(
+                room_image=b"room_bytes",
+                room_type="kitchen",
+                products=[
+                    {
+                        "group_code": "refrigerator",
+                        "product_name": "Tên thương mại không dùng trong prompt",
+                        "image_url": "https://cdn.example.com/refrigerator.jpg",
+                    },
+                    {
+                        "group_code": "rice_cooker",
+                        "image_url": "https://cdn.example.com/rice-cooker.jpg",
+                    },
+                ],
             )
-            assert res.success is False
-            assert "HTTP 500" in (res.error or "")
+
+        assert result.success is True
+        assert "exactly one refrigerator from picture 2" in (result.prompt or "")
+        assert "exactly one compact rice cooker from picture 3" in (result.prompt or "")
+        assert "Tên thương mại" not in (result.prompt or "")
+        assert mock_post.await_count == 1
+        payload = mock_post.call_args.kwargs["json"]
+        assert len(payload["images"]) == 3
+        assert payload["images"][1] == "https://cdn.example.com/refrigerator.jpg"
+        assert payload["images"][2] == "https://cdn.example.com/rice-cooker.jpg"
+        assert mock_post.call_args.args[0].endswith("/v1/images/edits")
 
     asyncio.run(_run())
 
@@ -196,6 +220,74 @@ def test_qwen_missing_env_config() -> None:
         res2 = await no_url_client.edit_image("prompt", [b"img"])
         assert res2.success is False
         assert "QWEN_GATEWAY_URL" in (res2.error or "")
+
+    asyncio.run(_run())
+
+
+def test_qwen_batch_generation_runs_in_parallel_with_shared_limit() -> None:
+    """Ba kết quả được gather đồng thời, nhưng gateway chỉ có hai edit đang chạy."""
+    async def _run() -> None:
+        active = 0
+        peak_active = 0
+
+        async def fake_mount(_self, **_kwargs) -> PlaceResult:
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+            return PlaceResult(
+                success=True,
+                generated_image="https://cdn.example.com/composed.jpg",
+                prompt="batch test prompt",
+            )
+
+        def recommendation(index: int) -> RecommendationResponse:
+            return RecommendationResponse(
+                room_type="living_room",
+                room_type_source="provided",
+                room_detection_scores=None,
+                detected_objects=[],
+                recommendations=[{
+                    "group_code": "tv",
+                    "group_name": "TV",
+                    "category_id": "37",
+                    "group_category_id": "electronics",
+                    "cooccurrence_score": 0.5,
+                    "products": [{
+                        "product_id": f"P{index}",
+                        "category_id": "37",
+                        "category_name": "Tivi",
+                        "product_name": "TV",
+                        "brand": "Test",
+                        "price": 1_000_000,
+                        "currency": "VND",
+                        "image_url": "https://cdn.example.com/product.jpg",
+                        "product_url": "https://example.com/product",
+                    }],
+                }],
+                generation_status="skipped",
+            )
+
+        state = SimpleNamespace(qwen_edit_semaphore=asyncio.Semaphore(2))
+        settings = Settings(
+            qwen_gateway_url="https://gateway.example.com",
+            qwen_api_key="test-key",
+            qwen_max_concurrent_edits=2,
+        )
+        with patch.object(QwenImageEditClient, "mount_products_to_room", fake_mount):
+            results = await asyncio.gather(*[
+                _generate_recommendation_image(
+                    state=state,
+                    settings=settings,
+                    image=Image.new("RGB", (64, 64)),
+                    recommendation=recommendation(index),
+                )
+                for index in range(3)
+            ])
+
+        assert peak_active == 2
+        assert all(result.generation_status == "success" for result in results)
 
     asyncio.run(_run())
 
@@ -286,9 +378,11 @@ def test_build_room_edit_prompt_without_tv() -> None:
     assert "television" not in prompt_lower
     assert "tivi" not in prompt_lower
     assert " tv " not in prompt_lower
-    # Phải có đúng các sản phẩm trong danh sách
-    assert "Tủ lạnh Panasonic" in prompt
-    assert "Máy giặt LG" in prompt
+    # Prompt chỉ dùng category English, không đưa tên thương mại vào gateway.
+    assert "Picture 2 (refrigerator)" in prompt
+    assert "Picture 3 (washing machine)" in prompt
+    assert "Tủ lạnh Panasonic" not in prompt
+    assert "Máy giặt LG" not in prompt
     assert "Do not change room structure" in prompt
 
     # Negative prompt cũng không được chứa 'tv'

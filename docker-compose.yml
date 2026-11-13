@@ -31,6 +31,9 @@ services:
 
       # Container không có GPU -> luôn CPU.
       MODEL_DEVICE: cpu
+      # Hạ resize mặc định của Grounding DINO (800/1333) để giảm CPU latency.
+      DETECT_SHORTEST_EDGE: "${DETECT_SHORTEST_EDGE:-384}"
+      DETECT_LONGEST_EDGE: "${DETECT_LONGEST_EDGE:-640}"
       # Cell 9: đối chiếu class checkpoint với cooccurrence_matrix.json.
       REQUIRE_CLASS_MATCH: "true"
 
@@ -46,6 +49,7 @@ services:
       QWEN_API_KEY: "${QWEN_API_KEY}"
       QWEN_GATEWAY_TIMEOUT_S: "${QWEN_GATEWAY_TIMEOUT_S:-60.0}"
       QWEN_GATEWAY_CONNECT_TIMEOUT_S: "${QWEN_GATEWAY_CONNECT_TIMEOUT_S:-10.0}"
+      QWEN_MAX_CONCURRENT_EDITS: "${QWEN_MAX_CONCURRENT_EDITS:-2}"
       AUTO_GENERATE_IMAGE: "${AUTO_GENERATE_IMAGE:-false}"
 
       DOCS_ENABLED: "${DOCS_ENABLED:-true}"

@@ -68,6 +68,13 @@ GROUP_TO_DETECTOR: dict[str, str] = {
     "power_strip": "Power Surge Protector",
 }
 
+# Hệ số điều chỉnh P_cooc theo category. Bóng đèn LED là thiết bị phụ trợ,
+# thường bị detector Light bắt quá rộng, nên giảm tác động đồng xuất hiện để
+# không lấn át các thiết bị chính trong gợi ý.
+COOCCURRENCE_WEIGHTS: dict[str, float] = {
+    "led_bulb": 0.25,
+}
+
 # Detector -> nhóm cần loại khỏi gợi ý vì đã có trong ảnh (Cell 10.2).
 DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "TV": ["tv", "projector"],
@@ -84,7 +91,76 @@ DETECTOR_TO_GROUP: dict[str, list[str]] = {
     "Organizer Storage": ["storage_box"],
     "Remote": ["indoor_camera", "outdoor_camera"],
     "Entertainment Center": ["game_console"],
+    # Thiết bị & gia dụng Nhà bếp
+    "Refrigerator": ["refrigerator"],
+    "Freezer": ["freezer"],
+    "Beverage Cooler": ["beverage_cooler"],
+    "Gas Stove": ["gas_stove"],
+    "Induction Cooker": ["induction_cooker"],
+    "Infrared Cooker": ["infrared_cooker"],
+    # Grounding DINO có thể nhận ra bếp điện nhưng không phân biệt được công
+    # nghệ mặt bếp; loại cả hai category tương ứng để tránh gợi ý trùng.
+    "Electric Cooktop": ["induction_cooker", "infrared_cooker"],
+    "Microwave": ["microwave"],
+    "Oven": ["oven"],
+    "Range Hood": ["range_hood"],
+    "Dishwasher": ["dishwasher"],
+    "Rice Cooker": ["rice_cooker"],
+    "Air Fryer": ["air_fryer"],
+    "Kettle": ["kettle"],
+    "Blender": ["blender"],
+    "Juicer": ["juicer"],
+    "Soy Milk Maker": ["soy_milk_maker"],
+    "Coffee Maker": ["coffee_maker"],
+    "Water Purifier": ["water_purifier"],
+    "Water Dispenser": ["water_dispenser"],
 }
+
+# Tín hiệu bố cục có tính phân biệt phòng. Các nhãn chung như ``Chair`` chỉ có
+# trọng số thấp; các vật thể neo như ``Bed`` hoặc ``Refrigerator`` mới quyết
+# định mạnh loại phòng. Điểm cuối còn được bổ sung từ W(c, r) của category đã
+# detect, xem ``infer_room_type``.
+KITCHEN_ANCHOR_LABELS = frozenset({
+    "Refrigerator", "Freezer", "Beverage Cooler", "Gas Stove", "Induction Cooker",
+    "Infrared Cooker", "Electric Cooktop", "Microwave", "Oven", "Range Hood",
+    "Dishwasher", "Rice Cooker",
+    "Air Fryer", "Kettle", "Blender", "Juicer", "Soy Milk Maker", "Coffee Maker",
+    "Water Purifier", "Water Dispenser",
+})
+
+ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
+    **{label: {"kitchen": 4.0} for label in KITCHEN_ANCHOR_LABELS},
+    "Bed": {"bedroom": 4.0},
+    "Pillow": {"bedroom": 1.5},
+    "Throw Blanket": {"bedroom": 1.5},
+    "Side Table": {"bedroom": 1.2},
+    "Sofa": {"living_room": 3.5},
+    "Coffee Table": {"living_room": 2.5},
+    "Entertainment Center": {"living_room": 2.0},
+    "TV": {"living_room": 1.7, "bedroom": 0.4},
+    "Speaker": {"living_room": 1.2},
+    "Fireplace": {"living_room": 2.5},
+    "Laptop": {"bedroom": 0.5},
+    "Monitor": {"bedroom": 0.4},
+    "Printer": {"bedroom": 0.3},
+    "Desk Lamp": {"bedroom": 0.5},
+    "Tableware": {"kitchen": 1.0},
+    "Mugs Teacups": {"kitchen": 0.8},
+    "Table": {"kitchen": 0.3},
+    "Chair": {"living_room": 0.15, "bedroom": 0.15},
+    "Cabinet": {"kitchen": 0.5, "bedroom": 0.2},
+    "Mirror": {"bedroom": 0.5},
+    "Rug": {"living_room": 0.4, "bedroom": 0.4},
+    # Cây xanh thường là điểm nhấn trang trí ở phòng khách. Giữ tín hiệu phòng
+    # ngủ thấp nhưng tăng living_room để Plant có ý nghĩa trong ảnh hỗn hợp.
+    "Plant": {"living_room": 0.8, "bedroom": 0.1},
+    "Planter": {"living_room": 0.2, "bedroom": 0.1},
+}
+
+# W(c, r) được học ở cấp category, nên là tín hiệu phụ trợ; không được phép
+# lấn át vật thể neo trong bố cục ảnh.
+CATALOG_ROOM_SCORE_WEIGHT = 0.75
+NO_SIGNAL_FALLBACK_ROOM = "living_room"
 
 # Nhóm không có detector tương ứng — P_cooc luôn 0, chỉ xếp theo W(c, r).
 GROUPS_WITHOUT_DETECTOR: frozenset[str] = frozenset(
@@ -107,6 +183,7 @@ class Recommender:
         default_top_k: int = 10,
         default_min_score: float = 0.05,
         default_products_per_group: int = 3,
+        default_min_price: float = 250_000.0,
     ):
         self.classes: list[str] = list(cooc["classes"])
         self.matrix: list[list[float]] = cooc["matrix"]
@@ -127,6 +204,7 @@ class Recommender:
         self.default_top_k = default_top_k
         self.default_min_score = default_min_score
         self.default_products_per_group = default_products_per_group
+        self.default_min_price = default_min_price
         self._index = {c: i for i, c in enumerate(self.classes)}
 
         # Ứng viên = nhóm có trong catalog VÀ có điểm phòng; tính một lần.
@@ -168,6 +246,56 @@ class Recommender:
         """W(c, r) — đọc bảng điểm nạp từ `artifacts/matrix/category_room_scores.json`."""
         return float(self.room_scores.get(group_code, {}).get(room_type, 0.0))
 
+    def infer_room_type(
+        self, detected_objects: Sequence[dict[str, Any]],
+    ) -> tuple[str, dict[str, float]]:
+        """Chấm điểm 3 loại phòng từ các vật thể Grounding DINO đã detect.
+
+        Mỗi đóng góp được nhân với confidence của nhãn. Hàm trả về đầy đủ điểm
+        để API có thể giải thích quyết định, cùng room có điểm cao nhất. Nếu ảnh
+        không có nhãn mang tín hiệu phòng, giữ ``default_room_type``.
+        """
+        scores = {room: 0.0 for room in self.room_types}
+
+        for item in detected_objects:
+            label = str(item.get("label", ""))
+            try:
+                confidence = float(item.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                confidence = 0.0
+            confidence = max(0.0, min(1.0, confidence))
+            if confidence == 0.0:
+                continue
+
+            for room, weight in ROOM_LABEL_WEIGHTS.get(label, {}).items():
+                scores[room] += confidence * weight
+
+            # Các thiết bị có category tương ứng dùng thêm W(c, r), nhờ vậy
+            # điểm phòng đã huấn luyện được tham gia mà không cần hard-code
+            # toàn bộ danh mục vào bảng tín hiệu phía trên.
+            for group_code in DETECTOR_TO_GROUP.get(label, ()):
+                for room in scores:
+                    scores[room] += (
+                        confidence * CATALOG_ROOM_SCORE_WEIGHT * self.w(group_code, room)
+                    )
+
+        best_score = max(scores.values(), default=0.0)
+        has_room_signal = best_score > 0.0
+        room_type = (
+            max(self.room_types, key=lambda room: scores[room])
+            if has_room_signal
+            else NO_SIGNAL_FALLBACK_ROOM
+        )
+        rounded_scores = {room: round(score, 4) for room, score in scores.items()}
+        logger.info(
+            "Room type inferred: %s; source=%s; scores=%s; detected_labels=%s",
+            room_type,
+            "signals" if has_room_signal else "fallback_no_detected_objects",
+            rounded_scores,
+            [str(item.get("label", "")) for item in detected_objects],
+        )
+        return room_type, rounded_scores
+
     # ---- Tầng 3: P_cooc(c | D) ----
     def cooccurrence_score(
         self, detected_labels: Sequence[str], group_code: str, alpha: float | None = None
@@ -181,7 +309,8 @@ class Recommender:
         not_present = 1.0
         for label in detected_labels:
             not_present *= 1.0 - self.p_smoothed(label, proxy, alpha)
-        return 1.0 - not_present
+        raw_score = 1.0 - not_present
+        return raw_score * COOCCURRENCE_WEIGHTS.get(group_code, 1.0)
 
     def build_reason(
         self,
@@ -265,7 +394,7 @@ class Recommender:
             candidates.append({
                 "group_code": group_code,
                 "group_name": group_scores.group_name(group_code),
-                "category_id": group_scores.GROUP_CATEGORY.get(group_code),
+                "group_category_id": group_scores.GROUP_CATEGORY.get(group_code),
                 "cooccurrence_score": cooc,
                 "room_score": room_score,
                 "final_score": final_score,
@@ -292,21 +421,31 @@ class Recommender:
         # `min_price`/`max_price`), nên bỏ qua và lấy tiếp ứng viên phía sau để
         # vẫn đủ `top_k`.
         top: list[dict[str, Any]] = []
+        effective_price_range = (
+            price_range
+            if price_range is not None
+            else (self.default_min_price, float("inf"))
+        )
         for item in candidates:
             products = list(self.catalog.available.get(item["group_code"], ()))
-            if price_range is not None:
-                lo, hi = price_range
+            if effective_price_range is not None:
+                lo, hi = effective_price_range
                 products = [p for p in products if lo <= p["price"] <= hi]
             if not products:
                 continue
             # Rẻ nhất trước: lựa chọn dễ tiếp cận hiển thị trước.
             products.sort(key=lambda p: p["price"])
+            selected_products = products[:products_per_group]
+            primary_product = selected_products[0]
             top.append({
                 "group_code": item["group_code"],
                 "group_name": item["group_name"],
-                "category_id": item["category_id"],
+                # category_id là giá trị thật từ DB của sản phẩm ưu tiên,
+                # không phải family tĩnh như `electronics` hoặc `appliance`.
+                "category_id": primary_product.get("category_id"),
+                "group_category_id": item["group_category_id"],
                 "cooccurrence_score": item["cooccurrence_score"],
-                "products": products[:products_per_group],
+                "products": selected_products,
             })
             if len(top) >= top_k:
                 break

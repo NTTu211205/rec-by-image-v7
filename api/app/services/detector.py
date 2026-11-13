@@ -27,19 +27,23 @@ DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_TEXT_THRESHOLD = 0.25
 
 # ---------------------------------------------------------------------------
-# Ánh xạ 45 class chuẩn của `cooccurrence_matrix.json` -> cụm từ prompt tiếng Anh
-# cho Grounding DINO. Các class gộp hoặc chứa dấu `/` (như `Basket/Bin`,
-# `Bench/Ottoman`, `Mugs Teacups`, `Power Surge Protector`...) được tách thành
-# các danh từ tự nhiên để BERT text encoder của Grounding DINO bắt chính xác,
-# sau đó kết quả được quy đổi ngược về đúng tên chuẩn trong 45 class.
+# Ánh xạ class chuẩn của detector -> cụm từ prompt tiếng Anh cho Grounding DINO.
+# Bao gồm:
+# 1) 45 class nội thất chuẩn (khớp 1-1 ma trận đồng xuất hiện `cooccurrence_matrix.json`).
+# 2) Các nhóm danh mục chuyên dụng và tiện ích cho Nhà bếp (Kitchen).
+# Các class gộp hoặc chứa dấu `/` (như `Basket/Bin`, `Bench/Ottoman`, `Mugs Teacups`...)
+# được tách thành các danh từ tự nhiên để BERT text encoder của Grounding DINO bắt chính xác,
+# sau đó kết quả được quy đổi ngược về đúng tên chuẩn.
 # ---------------------------------------------------------------------------
 CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
+    # --- 45 class nội thất cơ bản (COCO indoor / Matrix) ---
     "Accent Chair": ("accent chair", "armchair"),
     "Air Conditioner": ("air conditioner",),
-    "Basket/Bin": ("basket", "storage bin", "trash bin"),
+    "Basket/Bin": ("basket", "storage bin", "trash bin", "trash can", "garbage can"),
+    "Bed": ("bed", "bed frame", "headboard"),
     "Bench/Ottoman": ("bench", "ottoman"),
     "Books": ("books",),
-    "Cabinet": ("cabinet", "dresser"),
+    "Cabinet": ("cabinet", "dresser", "kitchen cabinet", "cupboard", "kitchen counter"),
     "Candle": ("candle",),
     "Chair": ("chair", "dining chair"),
     "Clock": ("clock", "wall clock"),
@@ -79,8 +83,181 @@ CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
     "Throw Blanket": ("throw blanket", "blanket"),
     "Vase": ("vase",),
     "Wall Art": ("wall art", "painting"),
+
+    # --- Danh mục thiết bị & gia dụng Nhà bếp (Kitchen Categories) ---
+    "Refrigerator": ("refrigerator", "fridge"),
+    "Freezer": ("freezer", "chest freezer"),
+    "Beverage Cooler": ("beverage cooler", "drink cooler", "wine cooler"),
+    "Gas Stove": ("gas stove", "gas cooker", "gas range"),
+    "Induction Cooker": ("induction cooker", "induction stove", "cooktop"),
+    "Infrared Cooker": ("infrared cooker", "infrared stove"),
+    # Nhãn tổng quát cho bếp điện mặt kính/âm bàn khi ảnh không thể hiện rõ
+    # công nghệ induction hay infrared. Các cụm cụ thể giúp Grounding DINO bắt
+    # được cả bếp đơn đặt phẳng trên mặt bàn như ảnh nội thất thực tế.
+    "Electric Cooktop": (
+        "electric cooktop",
+        "electric stove",
+        "electric hob",
+        "built-in electric cooktop",
+        "glass ceramic cooktop",
+        "ceramic hob",
+        "electric hot plate",
+        "single burner electric cooktop",
+    ),
+    "Microwave": ("microwave", "microwave oven"),
+    "Oven": ("oven", "electric oven"),
+    "Range Hood": ("range hood", "kitchen hood", "exhaust hood"),
+    "Dishwasher": ("dishwasher",),
+    "Rice Cooker": ("rice cooker",),
+    "Air Fryer": ("air fryer",),
+    "Kettle": ("electric kettle", "kettle", "water kettle"),
+    "Blender": ("blender", "smoothie maker"),
+    "Juicer": ("juicer", "fruit juicer"),
+    "Soy Milk Maker": ("soy milk maker", "nut milk maker"),
+    "Coffee Maker": ("coffee maker", "coffee machine", "espresso machine"),
+    "Water Purifier": ("water purifier", "water filter"),
+    "Water Dispenser": ("water dispenser", "water cooler"),
 }
 
+# ---------------------------------------------------------------------------
+# Danh sách class theo từng loại phòng chuyên biệt.
+# Giúp Grounding DINO chỉ tìm kiếm các vật thể có liên quan đến phòng đó:
+# 1) Giảm thiểu false positive (vd: không bắt nhầm máy hút mùi/nồi cơm trong phòng khách).
+# 2) Rút ngắn chuỗi prompt (< 256 tokens), tăng tốc độ suy luận.
+# ---------------------------------------------------------------------------
+LIVING_ROOM_CLASSES: tuple[str, ...] = (
+    # Nội thất & đồ rời phòng khách (COCO indoor)
+    "Accent Chair",
+    "Air Conditioner",
+    "Basket/Bin",
+    "Bench/Ottoman",
+    "Books",
+    "Cabinet",
+    "Candle",
+    "Chair",
+    "Clock",
+    "Coffee Table",
+    "Curtain",
+    "Curtain Rod",
+    "Decor",
+    "Desk Lamp",
+    "Entertainment Center",
+    "Fan",
+    "Fireplace",
+    "Floor Lamp",
+    "Laptop",
+    "Light",
+    "Mirror",
+    "Monitor",
+    "Mugs Teacups",
+    "Organizer Storage",
+    "Phone",
+    "Picture Frame",
+    "Pillow",
+    "Plant",
+    "Planter",
+    "Power Surge Protector",
+    "Printer",
+    "Remote",
+    "Rug",
+    "Shelf",
+    "Side Table",
+    "Sofa",
+    "Speaker",
+    "Stool",
+    "TV",
+    "Table",
+    "Table Lamp",
+    "Tableware",
+    "Throw Blanket",
+    "Vase",
+    "Wall Art",
+    # Tiện ích gia dụng có thể đặt ở phòng khách
+    "Beverage Cooler",
+    "Coffee Maker",
+    "Water Dispenser",
+)
+
+KITCHEN_CLASSES: tuple[str, ...] = (
+    # Nhãn thiết bị & gia dụng nhà bếp. Electric Cooktop là nhãn detector tổng
+    # quát, ánh xạ về hai category bếp điện hiện có trong recommender.
+    "Refrigerator",
+    "Freezer",
+    "Beverage Cooler",
+    "Gas Stove",
+    "Induction Cooker",
+    "Infrared Cooker",
+    "Electric Cooktop",
+    "Microwave",
+    "Oven",
+    "Range Hood",
+    "Dishwasher",
+    "Rice Cooker",
+    "Air Fryer",
+    "Kettle",
+    "Blender",
+    "Juicer",
+    "Soy Milk Maker",
+    "Coffee Maker",
+    "Water Purifier",
+    "Water Dispenser",
+    # Đồ dùng, nội thất & tiện ích phòng bếp / ăn
+    # "Cabinet",
+    # "Table",
+    # "Chair",
+    # "Stool",
+    # "Tableware",
+    # "Mugs Teacups",
+    # "Shelf",
+    # "Basket/Bin",
+    # "Organizer Storage",
+    # "Light",
+    # "Fan",
+    # "Air Conditioner",
+    # "Clock",
+    # "Power Surge Protector",
+    # "Plant",
+    # "Planter",
+    # "Curtain",
+    # "Wall Art",
+)
+
+BEDROOM_CLASSES: tuple[str, ...] = (
+    # Vật thể neo bố cục phòng ngủ.
+    "Bed",
+    "Pillow",
+    "Throw Blanket",
+    "Side Table",
+    "Table Lamp",
+    "Desk Lamp",
+    "Floor Lamp",
+    "Mirror",
+    "Cabinet",
+    "Shelf",
+    "Rug",
+    "Curtain",
+    "Curtain Rod",
+    "Chair",
+    "Table",
+    "Books",
+    "Picture Frame",
+    "Wall Art",
+    "Decor",
+    "Plant",
+    "Planter",
+    "Organizer Storage",
+    "Laptop",
+    "Monitor",
+    "Air Conditioner",
+    "Fan",
+    "Light",
+)
+
+ROOM_CLASSES: dict[str, tuple[str, ...]] = {
+    "living_room": LIVING_ROOM_CLASSES,
+    "kitchen": KITCHEN_CLASSES,
+    "bedroom": BEDROOM_CLASSES,
+}
 
 def _clean_text(text: str) -> str:
     """Chuẩn hoá chuỗi nhãn: chữ thường, bỏ ký tự đặc biệt thừa, gộp khoảng trắng."""
@@ -124,6 +301,21 @@ def build_prompt(classes: list[str] | tuple[str, ...] | None = None) -> str:
     return " . ".join(phrases) + " ."
 
 
+def build_chunked_prompts(
+    classes: list[str] | tuple[str, ...] | None = None,
+    chunk_size: int = 32,
+) -> list[str]:
+    """Tách danh sách class thành các chuỗi prompt < 180 tokens để an toàn với giới hạn 256 của BERT."""
+    target_classes = list(classes if classes is not None else CLASS_PROMPTS.keys())
+    chunks: list[str] = []
+    for i in range(0, len(target_classes), chunk_size):
+        chunk_classes = target_classes[i : i + chunk_size]
+        p = build_prompt(chunk_classes)
+        if p.strip() and p.strip() != ".":
+            chunks.append(p)
+    return chunks
+
+
 def normalize_label(raw_label: str) -> str | None:
     """Quy đổi nhãn thô do Grounding DINO giải mã về đúng tên trong 45 class chuẩn."""
     if not raw_label:
@@ -163,7 +355,7 @@ def resolve_device(requested: str) -> str:
 
 
 class Detector:
-    """Bọc model Grounding DINO (Hugging Face transformers). Một model dùng chung -> predict tuần tự."""
+    """Bọc Grounding DINO; một model dùng chung nên inference được tuần tự hoá."""
 
     def __init__(
         self,
@@ -171,17 +363,29 @@ class Detector:
         device: str = "auto",
         jpeg_roundtrip: bool = True,
         text_threshold: float = DEFAULT_TEXT_THRESHOLD,
+        shortest_edge: int = 384,
+        longest_edge: int = 640,
     ):
         self.model_path = Path(model_path) if isinstance(model_path, Path) else Path(str(model_path))
         self.model_id = str(model_path).strip() or DEFAULT_MODEL_ID
         self.device = resolve_device(device)
         self.jpeg_roundtrip = jpeg_roundtrip
         self.text_threshold = text_threshold
+        self.image_size = {
+            "shortest_edge": shortest_edge,
+            "longest_edge": longest_edge,
+        }
         self.family: str | None = None
         self._processor = None
         self._model = None
-        self._classes: list[str] = sorted(CLASS_PROMPTS.keys())
-        self.prompt: str = build_prompt(self._classes)
+        self._classes: list[str] = list(CLASS_PROMPTS.keys())
+        self.room_prompts: dict[str, list[str]] = {
+            room: build_chunked_prompts(classes, chunk_size=25)
+            for room, classes in ROOM_CLASSES.items()
+        }
+        self.room_prompts["default"] = build_chunked_prompts(self._classes, chunk_size=25)
+        self.prompts: list[str] = self.room_prompts.get("living_room") or self.room_prompts["default"]
+        self.prompt: str = self.prompts[0] if self.prompts else ""
         self._post_process_uses_threshold: bool = False
         self._lock = threading.Lock()
 
@@ -191,8 +395,6 @@ class Detector:
 
     @property
     def class_names(self) -> list[str]:
-        if not self.loaded:
-            return []
         return list(self._classes)
 
     def load(self) -> None:
@@ -228,70 +430,117 @@ class Detector:
                 "model_id": self.model_id,
                 "device": self.device,
                 "classes": len(self._classes),
+                "detect_image_size": self.image_size,
             },
         )
 
     def check_classes(self, expected: list[str]) -> None:
-        """Bộ class chuẩn của detector phải khớp 1-1 với ma trận đồng xuất hiện."""
+        """Bộ class của detector phải bao phủ đầy đủ ma trận đồng xuất hiện."""
         actual = set(self.class_names)
-        if actual != set(expected):
-            missing = sorted(set(expected) - actual)
-            extra = sorted(actual - set(expected))
+        missing = sorted(set(expected) - actual)
+        if missing:
             raise ArtifactError(
-                "Class của detector không khớp ma trận đồng xuất hiện "
-                f"(thiếu {missing[:5]}, thừa {extra[:5]})."
+                "Class của detector thiếu so với ma trận đồng xuất hiện: "
+                f"(thiếu {missing[:5]})."
             )
 
     def warmup(self) -> None:
         if self.loaded:
-            self.detect(Image.new("RGB", (64, 64)), confidence=0.99)
+            self.detect(Image.new("RGB", (64, 64)), confidence=0.99, room_type="living_room")
 
-    def detect(self, img: Image.Image, confidence: float) -> list[dict]:
-        """Chạy Grounding DINO zero-shot detection, quy đổi về 45 class chuẩn và giữ confidence cao nhất."""
-        if self._model is None or self._processor is None:
-            raise ModelNotReadyError("Model chưa được nạp.")
-
+    def _prepare_image(self, img: Image.Image) -> Image.Image:
+        """Chuẩn hoá đầu vào ảnh trước khi đưa vào Grounding DINO."""
         if self.jpeg_roundtrip:
             buf = BytesIO()
             img.save(buf, format="JPEG")
-            img = Image.open(BytesIO(buf.getvalue())).convert("RGB")
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
+            return Image.open(BytesIO(buf.getvalue())).convert("RGB")
+        return img if img.mode == "RGB" else img.convert("RGB")
+
+    def _resolve_prompts(self, room_type: str | None) -> tuple[str, list[str]]:
+        """Trả room đã chuẩn hoá và các prompt chunks dùng cho room đó."""
+        resolved_room = room_type.strip().lower() if room_type else "default"
+        prompts = (
+            self.room_prompts.get(resolved_room)
+            or self.room_prompts.get("default")
+            or self.prompts
+        )
+        return resolved_room, prompts
+
+    def detect(
+        self,
+        img: Image.Image,
+        confidence: float,
+        room_type: str | None = None,
+    ) -> list[dict]:
+        """Chạy Grounding DINO cho một ảnh và quy đổi về các class chuẩn."""
+        if self._model is None or self._processor is None:
+            raise ModelNotReadyError("Model chưa được nạp.")
 
         import torch
 
+        prepared_image = self._prepare_image(img)
         text_thresh = min(self.text_threshold, float(confidence))
-        with self._lock, torch.no_grad():
-            inputs = self._processor(images=img, text=self.prompt, return_tensors="pt").to(
-                self.device
-            )
-            outputs = self._model(**inputs)
-
-            post_kwargs: dict = {
-                "outputs": outputs,
-                "input_ids": inputs.input_ids,
-                "text_threshold": text_thresh,
-                "target_sizes": [(img.height, img.width)],
-            }
-            if self._post_process_uses_threshold:
-                post_kwargs["threshold"] = float(confidence)
-            else:
-                post_kwargs["box_threshold"] = float(confidence)
-
-            results = self._processor.post_process_grounded_object_detection(**post_kwargs)
-
-        result = results[0]
-        raw_labels = result.get("text_labels")
-        if raw_labels is None:
-            raw_labels = result.get("labels", [])
-        scores = result.get("scores", [])
-
         best: dict[str, dict] = {}
-        for raw_label, score in zip(raw_labels, scores):
-            cls_name = normalize_label(str(raw_label))
-            if cls_name is None:
-                continue
-            conf = float(score.item() if hasattr(score, "item") else score)
-            if cls_name not in best or conf > best[cls_name]["confidence"]:
-                best[cls_name] = {"label": cls_name, "confidence": conf}
-        return list(best.values())
+
+        # Khi caller không chỉ định phòng, dùng prompt `default` gồm toàn bộ
+        # CLASS_PROMPTS. Room cụ thể chỉ giới hạn nhãn khi nó được gửi rõ ràng.
+        resolved_room, prompts = self._resolve_prompts(room_type)
+
+        with self._lock, torch.no_grad():
+            for idx, prompt_text in enumerate(prompts, 1):
+                logger.info(
+                    "[Grounding DINO] [%s] Text prompt (%d/%d): %s",
+                    resolved_room,
+                    idx,
+                    len(prompts),
+                    prompt_text,
+                )
+                inputs = self._processor(
+                    images=prepared_image,
+                    text=prompt_text,
+                    return_tensors="pt",
+                    images_kwargs={"size": self.image_size},
+                ).to(self.device)
+                outputs = self._model(**inputs)
+
+                post_kwargs: dict = {
+                    "outputs": outputs,
+                    "input_ids": inputs.input_ids,
+                    "text_threshold": text_thresh,
+                    "target_sizes": [(prepared_image.height, prepared_image.width)],
+                }
+                if self._post_process_uses_threshold:
+                    post_kwargs["threshold"] = float(confidence)
+                else:
+                    post_kwargs["box_threshold"] = float(confidence)
+
+                results = self._processor.post_process_grounded_object_detection(**post_kwargs)
+                result = results[0]
+                raw_labels = result.get("text_labels")
+                if raw_labels is None:
+                    raw_labels = result.get("labels", [])
+                scores = result.get("scores", [])
+
+                for raw_label, score in zip(raw_labels, scores):
+                    cls_name = normalize_label(str(raw_label))
+                    if cls_name is None:
+                        continue
+                    conf = float(score.item() if hasattr(score, "item") else score)
+                    if cls_name not in best or conf > best[cls_name]["confidence"]:
+                        best[cls_name] = {"label": cls_name, "confidence": conf}
+
+        detected = list(best.values())
+        if detected:
+            logger.info(
+                "[Grounding DINO] [%s] Detected %d objects: %s",
+                resolved_room,
+                len(detected),
+                ", ".join(f"{d['label']} ({d['confidence']:.2f})" for d in detected),
+            )
+        else:
+            logger.info(
+                "[Grounding DINO] [%s] No object over confidence=%.2f",
+                resolved_room,
+                confidence,
+            )
+        return detected

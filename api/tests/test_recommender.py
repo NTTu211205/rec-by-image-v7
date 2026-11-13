@@ -12,9 +12,11 @@ from app.services import group_scores
 from app.services.product_catalog import Catalog
 from app.services.room_scores import ROOM_CODES
 from app.services.recommender import (
+    COOCCURRENCE_WEIGHTS,
     DETECTOR_TO_GROUP,
     GROUPS_WITHOUT_DETECTOR,
     GROUP_TO_DETECTOR,
+    ROOM_LABEL_WEIGHTS,
     Recommender,
 )
 
@@ -23,25 +25,31 @@ def _catalog() -> Catalog:
     """Catalog nhỏ: 3 nhóm, nhóm `tv` có 2 sản phẩm (1 hết hàng)."""
     products = {
         "tv": [
-            {"product_id": "T1", "product_name": "TV đắt", "brand": "A",
+            {"product_id": "T1", "category_id": "37", "category_name": "Tivi", "product_name": "TV đắt", "brand": "A",
              "price": 9_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
-            {"product_id": "T2", "product_name": "TV rẻ", "brand": "B",
+            {"product_id": "T2", "category_id": "38", "category_name": "Tivi", "product_name": "TV rẻ", "brand": "B",
              "price": 3_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
-            {"product_id": "T3", "product_name": "TV hết hàng", "brand": "C",
+            {"product_id": "T3", "category_id": "37", "category_name": "Tivi", "product_name": "TV hết hàng", "brand": "C",
              "price": 1_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": False},
         ],
         "speaker": [
-            {"product_id": "S1", "product_name": "Loa", "brand": "D",
+            {"product_id": "S1", "category_id": "132", "category_name": "Loa", "product_name": "Loa", "brand": "D",
              "price": 2_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
         ],
         "air_conditioner": [
-            {"product_id": "A1", "product_name": "Điều hoà", "brand": "E",
+            {"product_id": "A1", "category_id": "36", "category_name": "Máy lạnh", "product_name": "Điều hoà", "brand": "E",
              "price": 8_000_000.0, "currency": "VND", "image_url": "",
              "product_url": "", "availability": True},
+        ],
+        "rice_cooker": [
+            {"product_id": "R1", "category_id": "54", "category_name": "Nồi cơm điện",
+             "product_name": "Nồi cơm", "brand": "F", "price": 2_500_000.0,
+             "currency": "VND", "image_url": "", "product_url": "",
+             "availability": True},
         ],
     }
     return Catalog(products, source="fixture")
@@ -72,18 +80,23 @@ def _cooc() -> dict:
 
 
 def _room_scores() -> dict[str, dict[str, float]]:
-    """Bảng điểm giả cho 3 nhóm trong `_catalog()` — đủ 7 phòng mỗi nhóm.
+    """Bảng điểm giả cho 3 nhóm trong `_catalog()` — đủ 3 phòng mỗi nhóm.
 
     Chỉ `living_room` khác 0 để dễ suy luận khi kiểm tra xếp hạng.
     """
     def row(living_room: float) -> dict[str, float]:
         return {room: 0.0 for room in ROOM_CODES} | {"living_room": living_room}
 
-    return {
+    scores = {
         "tv": row(0.9),
         "speaker": row(0.7),
         "air_conditioner": row(0.5),
+        "rice_cooker": row(0.0),
     }
+    for code in ("tv", "speaker", "air_conditioner"):
+        scores[code]["kitchen"] = -1.0
+    scores["rice_cooker"]["kitchen"] = 1.0
+    return scores
 
 
 def _recommender(**kwargs) -> Recommender:
@@ -125,6 +138,13 @@ def test_detector_to_group_covers_proxies() -> None:
         assert code in DETECTOR_TO_GROUP.get(detector, ()), f"{detector} thiếu {code}"
 
 
+def test_electric_cooktop_maps_to_both_electric_cooker_categories() -> None:
+    assert DETECTOR_TO_GROUP["Electric Cooktop"] == [
+        "induction_cooker", "infrared_cooker",
+    ]
+    assert ROOM_LABEL_WEIGHTS["Electric Cooktop"] == {"kitchen": 4.0}
+
+
 # --- Công thức --------------------------------------------------------------
 
 def test_w_reads_injected_scores() -> None:
@@ -137,6 +157,41 @@ def test_w_reads_injected_scores() -> None:
 
 def test_room_types_from_contract() -> None:
     assert _recommender().room_types == list(ROOM_CODES)
+    assert all(set(scores) <= set(ROOM_CODES) for scores in ROOM_LABEL_WEIGHTS.values())
+
+
+def test_infer_room_type_uses_detected_room_anchors() -> None:
+    rec = _recommender()
+
+    room, scores = rec.infer_room_type([
+        {"label": "Bed", "confidence": 0.9},
+        {"label": "Pillow", "confidence": 0.8},
+    ])
+
+    assert room == "bedroom"
+    assert scores["bedroom"] > scores["living_room"]
+    assert set(scores) == set(ROOM_CODES)
+
+
+def test_infer_room_type_plant_strengthens_living_room_signal() -> None:
+    rec = _recommender()
+
+    room, scores = rec.infer_room_type([
+        {"label": "Plant", "confidence": 1.0},
+    ])
+
+    assert ROOM_LABEL_WEIGHTS["Plant"] == {"living_room": 0.8, "bedroom": 0.1}
+    assert room == "living_room"
+    assert scores == {"living_room": 0.8, "bedroom": 0.1, "kitchen": 0.0}
+
+
+def test_infer_room_type_falls_back_when_no_room_signal() -> None:
+    room, scores = _recommender().infer_room_type([
+        {"label": "Unknown object", "confidence": 0.9},
+    ])
+
+    assert room == "living_room"
+    assert scores == {room_code: 0.0 for room_code in ROOM_CODES}
 
 
 def test_recommender_does_not_mutate_injected_scores() -> None:
@@ -173,6 +228,23 @@ def test_cooccurrence_noisy_or() -> None:
 def test_cooccurrence_zero_without_proxy() -> None:
     rec = _recommender()
     assert rec.cooccurrence_score(["TV"], "air_fryer") == 0.0
+
+
+def test_led_bulb_cooccurrence_is_downweighted() -> None:
+    cooc = {
+        "classes": ["TV", "Light"],
+        "matrix": [[1.0, 0.8], [0.8, 1.0]],
+        "support": {"TV": 10, "Light": 10},
+        "counts": {"TV": {"TV": 10, "Light": 8}, "Light": {"TV": 8, "Light": 10}},
+        "base_rate": {"TV": 0.2, "Light": 0.2},
+        "n_images": 50,
+    }
+    rec = Recommender(cooc, _catalog(), room_scores=_room_scores())
+
+    assert COOCCURRENCE_WEIGHTS["led_bulb"] == 0.25
+    assert rec.cooccurrence_score(["TV"], "led_bulb") == pytest.approx(
+        rec.p_smoothed("TV", "Light") * 0.25
+    )
 
 
 # --- Xếp hạng ---------------------------------------------------------------
@@ -216,8 +288,28 @@ def test_keeps_detected_when_disabled() -> None:
 
 def test_min_score_filters() -> None:
     rec = _recommender()
-    out = rec.recommend([], room_type="bathroom", top_k=10, min_score=0.5)
+    out = rec.recommend([], room_type="kitchen", top_k=10, min_score=1.1)
     assert out["recommendations"] == []
+
+
+def test_kitchen_room_score_prioritizes_kitchen_groups() -> None:
+    rec = _recommender()
+    out = rec.recommend(
+        [],
+        room_type="kitchen",
+        top_k=10,
+        exclude_detected=False,
+    )
+    assert [item["group_code"] for item in out["recommendations"]] == ["rice_cooker"]
+
+
+def test_kitchen_uses_scores_instead_of_hard_group_filter() -> None:
+    rec = _recommender()
+    out = rec.recommend(
+        [], room_type="kitchen", top_k=10, min_score=-1, exclude_detected=False,
+    )
+    codes = {item["group_code"] for item in out["recommendations"]}
+    assert codes == {"rice_cooker", "tv", "speaker", "air_conditioner"}
 
 
 def test_products_exclude_unavailable_and_sorted_by_price() -> None:
@@ -264,7 +356,18 @@ def test_category_filter() -> None:
     out = rec.recommend([], room_type="living_room", top_k=20, min_score=0,
                         category_id="electronics")
     assert out["recommendations"]
-    assert all(i["category_id"] == "electronics" for i in out["recommendations"])
+    assert all(i["group_category_id"] == "electronics" for i in out["recommendations"])
+
+
+def test_response_uses_actual_db_category_id() -> None:
+    rec = _recommender()
+    out = rec.recommend([], room_type="living_room", top_k=10, min_score=0)
+    tv = next(item for item in out["recommendations"] if item["group_code"] == "tv")
+
+    # TV rẻ là sản phẩm ưu tiên sau khi sort giá; ID 38 phải đi thẳng từ DB.
+    assert tv["category_id"] == "38"
+    assert tv["group_category_id"] == "electronics"
+    assert tv["products"][0]["category_id"] == "38"
 
 
 def test_reason_mentions_detected_object() -> None:
@@ -295,7 +398,8 @@ def test_response_shape() -> None:
     assert out["detected_objects"] == detected
     item = out["recommendations"][0]
     assert set(item) == {
-        "group_code", "group_name", "category_id", "cooccurrence_score", "products",
+        "group_code", "group_name", "category_id", "group_category_id",
+        "cooccurrence_score", "products",
     }
 
 
@@ -304,3 +408,28 @@ def test_products_per_group_custom() -> None:
     out = rec.recommend([], room_type="living_room", top_k=5, min_score=0, products_per_group=1)
     for item in out["recommendations"]:
         assert len(item["products"]) == 1
+
+
+def test_default_min_price_filter() -> None:
+    """Mặc định loại bỏ sản phẩm < 250k nếu không truyền price_range."""
+    catalog = Catalog(
+        {
+            "tv": [
+                {"product_id": "1", "product_name": "Phụ kiện rẻ", "price": 100_000.0, "category_id": "38", "availability": True, "currency": "VND", "image_url": "", "product_url": "", "category_name": "Tivi", "brand": "A"},
+                {"product_id": "2", "product_name": "TV chuẩn", "price": 5_000_000.0, "category_id": "38", "availability": True, "currency": "VND", "image_url": "", "product_url": "", "category_name": "Tivi", "brand": "B"},
+            ]
+        },
+        source="test",
+    )
+    rec = Recommender(_cooc(), catalog, room_scores=_room_scores(), default_min_price=250_000.0)
+
+    # 1. Mặc định không truyền price_range -> loại sản phẩm 100k, chỉ giữ sản phẩm 5tr
+    out = rec.recommend([], room_type="living_room", top_k=1, min_score=0)
+    tv = out["recommendations"][0]
+    assert [p["product_name"] for p in tv["products"]] == ["TV chuẩn"]
+
+    # 2. Truyền tường minh price_range=(0, inf) -> cho phép cả sản phẩm 100k
+    out_all = rec.recommend([], room_type="living_room", top_k=1, min_score=0, price_range=(0.0, float("inf")))
+    tv_all = out_all["recommendations"][0]
+    assert [p["product_name"] for p in tv_all["products"]] == ["Phụ kiện rẻ", "TV chuẩn"]
+

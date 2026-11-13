@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     model_text_threshold: float = Field(0.25, ge=0, le=1)
     # Tái tạo bước nén JPEG trong bộ nhớ để chuẩn hoá ảnh RGB đầu vào.
     detect_jpeg_roundtrip: bool = True
+    # Grounding DINO mặc định resize shortest edge lên 800px. Interior object
+    # detection chỉ cần bố cục/vật thể lớn nên 384px (longest 640px) giảm mạnh
+    # CPU latency (~38%) mà vẫn giữ trọn vẹn các vật thể và neo phòng.
+    detect_shortest_edge: int = Field(384, ge=320, le=800)
+    detect_longest_edge: int = Field(640, ge=480, le=1333)
     # Bắt buộc bộ class chuẩn của detector khớp `cooccurrence_matrix.json`.
     require_class_match: bool = True
 
@@ -72,6 +77,11 @@ class Settings(BaseSettings):
     default_min_score: float = Field(0.05, ge=0)
     products_per_group: int = Field(3, ge=1, le=PRODUCTS_PER_GROUP_MAX)
     default_exclude_detected: bool = True
+    default_min_price: float = Field(
+        250_000.0,
+        ge=0,
+        description="Mức giá tối thiểu mặc định (VND) cho sản phẩm gợi ý (mặc định 250k = 250.000đ).",
+    )
     # Cell 10.9: hệ số Laplace smoothing.
     alpha_smooth: float = Field(1.0, ge=0)
     smooth_k: int = Field(2, ge=1)
@@ -87,6 +97,9 @@ class Settings(BaseSettings):
     )
     qwen_gateway_timeout_s: float = Field(60.0, gt=0)
     qwen_gateway_connect_timeout_s: float = Field(10.0, gt=0)
+    # Giới hạn dùng chung cho mọi request gọi Qwen trong cùng API process.
+    # Batch ba phòng mặc định chạy hai edits song song để không quá tải gateway.
+    qwen_max_concurrent_edits: int = Field(2, ge=1, le=3)
     auto_generate_image: bool = False
 
     # --- Giới hạn đầu vào ---

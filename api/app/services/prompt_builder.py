@@ -3,10 +3,46 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 logger = logging.getLogger("app.prompt_builder")
+
+
+# Các bước đọc bố cục chỉ thêm cho đúng loại phòng. `living_room` giữ nguyên
+# prompt hiện có để không làm thay đổi hành vi đang được sử dụng.
+ROOM_SCENE_ANALYSIS: dict[str, str] = {
+    "kitchen": (
+        "Kitchen Scene Analysis: Before placing any product, identify the existing walls, floor, kitchen cabinets, "
+        "countertops, kitchen shelves, sink, stove, doors, appliances, and all existing kitchen objects in picture 1. "
+        "Preserve their positions and use only a suitable existing floor area, counter, shelf, or wall plane."
+    ),
+    "bedroom": (
+        "Bedroom Scene Analysis: Before placing any product, identify the existing bed, floor, bedside tables, desk, chairs, "
+        "mirror, wardrobe, windows, lamps, wall decor, and all existing bedroom objects in picture 1. "
+        "Preserve their positions and use only a suitable existing floor area, tabletop, shelf, or wall plane."
+    ),
+}
+
+# Nhãn category tiếng Anh được đưa vào prompt thay cho tên thương mại của sản phẩm.
+CATEGORY_PROMPT_NAMES: dict[str, str] = {
+    "tv": "television",
+    "desktop_pc": "desktop computer",
+    "led_bulb": "LED bulb",
+    "indoor_camera": "indoor security camera",
+    "outdoor_camera": "outdoor security camera",
+    "facial_cleanser": "facial cleansing device",
+    "soy_milk_maker": "soy milk maker",
+}
+
+
+def category_prompt_name(group_code: str) -> str:
+    """Trả category English an toàn để đưa vào prompt, không lộ tên sản phẩm."""
+    normalized = group_code.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]+", normalized):
+        return "product"
+    return CATEGORY_PROMPT_NAMES.get(normalized, normalized.replace("_", " "))
 
 
 @dataclass(frozen=True)
@@ -66,11 +102,30 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 4. Tủ lạnh
     "refrigerator": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place the refrigerator standing upright on the existing floor against the wall in picture 1. "
-            "Do NOT place on tables or counters, and do not float."
+            "- Picture {index} ({pname}): Copy exactly one visible refrigerator from picture {index} into picture 1. "
+            "Place it upright only in an unobstructed empty floor area at the exposed outer end of the kitchen cabinets, back against an uninterrupted wall and side against the cabinet end panel. "
+            "If no full-width empty bay exists, use the least-obstructed outer image edge with natural partial cropping instead of covering any existing object. "
+            "Do not overlap, cover, or stand in front of any cabinet, counter, sink, oven, door, or existing appliance. The refrigerator must be visible in the final image. "
+            "Preserve every existing cabinet, counter, sink, oven, door, wall, and floor unchanged."
         ),
-        rule="Refrigerator Placement: Stand upright flat on floor against wall. Never float or place on furniture.",
-        negative_terms=("floating refrigerator", "refrigerator on table", "refrigerator on counter", "tilted refrigerator"),
+        rule=(
+            "Refrigerator Placement: Copy one visible refrigerator from its reference image only onto an unobstructed empty floor area at an outer cabinet end. "
+            "Never overlap or stand in front of existing furniture, cabinets, counters, or doors; keep the room unchanged and match the cabinet perspective."
+        ),
+        negative_terms=(
+            # Không nêu từ "refrigerator" trong negative prompt: nhiều model
+            # image-edit sẽ triệt tiêu luôn vật thể được nhắc trong negative.
+            "floating appliance",
+            "appliance on counter",
+            "appliance on table",
+            "tilted appliance",
+            "appliance blocking walkway",
+            "appliance blocking cabinet doors",
+            "appliance blocking sink",
+            "appliance away from wall",
+            "appliance replacing cabinets",
+            "appliance covering cabinets",
+        ),
         aliases=("refrigerator", "tủ lạnh", "tu lanh", "fridge"),
     ),
     # 5. Lò nướng
@@ -454,7 +509,7 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 42. Camera ngoài trời
     "outdoor_camera": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount securely onto the existing wall or balcony plane in picture 1."
+            "- Picture {index} ({pname}): Mount securely onto an existing wall plane in picture 1."
         ),
         rule="Outdoor Camera Placement: Must be mounted firmly to the existing wall plane.",
         negative_terms=("outdoor camera on floor", "floating camera"),
@@ -500,11 +555,23 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 46. Nồi cơm điện
     "rice_cooker": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Place one compact rice cooker resting flat on an existing kitchen counter or shelf in picture 1. "
-            "Small tabletop scale (~20-25cm tall). Never place on floor; do NOT add new tables."
+            "- Picture {index} ({pname}): Place EXACTLY ONE single compact rice cooker resting flat on an existing kitchen counter in picture 1. "
+            "Small tabletop scale (~20-25cm tall). Strictly 1 rice cooker only; NEVER generate multiple or duplicate rice cookers."
         ),
-        rule="Rice Cooker Placement: Must rest flat on an existing counter or shelf in picture 1. Never place on the floor.",
-        negative_terms=("rice cooker on floor", "floating rice cooker", "extra table", "giant rice cooker", "oversized rice cooker"),
+        rule="Rice Cooker Placement: Must place exactly ONE single rice cooker flat on an existing counter. Never duplicate into multiple rice cookers.",
+        negative_terms=(
+            "rice cooker on floor",
+            "floating rice cooker",
+            "extra table",
+            "giant rice cooker",
+            "oversized rice cooker",
+            "duplicate rice cooker",
+            "multiple rice cookers",
+            "two rice cookers",
+            "three rice cookers",
+            "repeated rice cooker",
+            "cloned rice cooker",
+        ),
         aliases=("rice_cooker", "nồi cơm điện", "noi com dien", "rice cooker"),
     ),
     # 47. Robot hút bụi
@@ -529,9 +596,9 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
     # 49. Đèn năng lượng mặt trời
     "solar_light": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount on the existing exterior wall or balcony railing in picture 1."
+            "- Picture {index} ({pname}): Mount securely on an existing wall plane in picture 1."
         ),
-        rule="Solar Light Placement: Must be mounted securely to the existing wall or railing.",
+        rule="Solar Light Placement: Must be mounted securely to an existing wall plane.",
         negative_terms=("solar light on floor",),
         aliases=("solar_light", "đèn năng lượng mặt trời", "den nang luong mat troi"),
     ),
@@ -671,17 +738,17 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
             "- Picture {index} ({pname}): Place the compact water flosser standing upright on an existing vanity counter or shelf in picture 1. "
             "Realistic small handheld scale (~20-25cm tall)."
         ),
-        rule="Water Flosser Placement: Must stand upright on an existing bathroom counter or shelf.",
+        rule="Water Flosser Placement: Must stand upright on an existing counter or shelf.",
         negative_terms=("floating water flosser", "giant water flosser", "oversized water flosser"),
         aliases=("water_flosser", "máy tăm nước", "may tam nuoc"),
     ),
     # 61. Máy nước nóng
     "water_heater": CategoryRuleConfig(
         directive_template=(
-            "- Picture {index} ({pname}): Mount securely onto the existing bathroom wall plane at realistic installation height in picture 1. "
+            "- Picture {index} ({pname}): Mount securely onto an existing wall plane at realistic installation height in picture 1. "
             "Do NOT modify the wall or place on the floor."
         ),
-        rule="Water Heater Placement: Must be mounted on the existing bathroom wall plane, never placed on the floor.",
+        rule="Water Heater Placement: Must be mounted on an existing wall plane, never placed on the floor.",
         negative_terms=("water heater on floor", "floating water heater"),
         aliases=("water_heater", "máy nước nóng", "may nuoc nong", "water heater"),
     ),
@@ -710,14 +777,16 @@ CATEGORY_RULES: dict[str, CategoryRuleConfig] = {
 class ImageEditPromptBuilder:
     """Class chuyên biệt xây dựng prompt và negative prompt theo từng sản phẩm cho Qwen Image Edit."""
 
-    MAX_PROMPT_CHARS: int = 1700
-    MAX_NEGATIVE_PROMPT_CHARS: int = 1700
+    MAX_PROMPT_WORDS: int = 2000
+    MAX_PROMPT_CHARS: int = 4000
+    MAX_NEGATIVE_PROMPT_CHARS: int = 2500
 
     UNIVERSAL_RULES: tuple[str, ...] = (
-        "Room Structure & Background Preservation: Keep original room in picture 1 100% unchanged (walls, floor, ceiling, windows, furniture).",
-        "Zero Invented Furniture or Items: Do NOT add new tables, desks, cabinets, or decor. Place only on existing surfaces.",
-        "Realistic Physical Scale: Match real-world size and room depth. Countertop items stay compact. Never magnify.",
-        "Clear Foreground: Foreground floor must stay empty. Do not place near camera or duplicate items.",
+        "Strictly Single Instance & Exact Count: Place EXACTLY ONE instance of each referenced product.",
+        "Room Structure Preservation: Keep original room 100% unchanged (walls, floor, ceiling, furniture). Do NOT modify or carve into existing cabinets.",
+        "Zero Invented Furniture or Items: Do NOT add new tables, desks, cabinets, dish racks, or decor. Place only on existing surfaces.",
+        "Realistic Scale: Match real-world physical scale and room depth. Countertop items stay compact. Never magnify.",
+        "Clear Foreground: Foreground floor must stay empty. Do not place items in the immediate foreground near camera.",
     )
 
     BASE_NEGATIVE_TERMS: tuple[str, ...] = (
@@ -739,8 +808,23 @@ class ImageEditPromptBuilder:
         "invented objects",
         "unrequested decorations",
         "duplicate products",
-        "multiple appliances",
+        "duplicate items",
+        "duplicate appliances",
+        "duplicate rice cooker",
+        "multiple rice cookers",
+        "two rice cookers",
+        "three rice cookers",
+        "cloned products",
+        "twin products",
         "repeated products",
+        "repeated appliances",
+        "multiple copies of same product",
+        "two of the same item",
+        "multiple appliances",
+        "carved into cabinet",
+        "cut into cabinets",
+        "embedded in counter",
+        "dish rack on wall",
         "extra boxes",
         "pedestals",
         "stands under products",
@@ -770,14 +854,50 @@ class ImageEditPromptBuilder:
     def __init__(self) -> None:
         pass
 
+    def _build_refrigerator_only_prompt(self, product: Mapping[str, Any]) -> str:
+        """Prompt ngắn, không mâu thuẫn, cho tác vụ ghép một tủ lạnh."""
+        category = category_prompt_name((product.get("group_code") or "refrigerator"))
+        return (
+            "Mount the refrigerator in picture 2 into picture 1. Picture 1 is the fixed kitchen photo; "
+            "picture 2 is the refrigerator reference. The final image must visibly contain exactly one refrigerator copied from picture 2. "
+            "Place it only in an unobstructed empty floor area at an exposed outer end of the existing kitchen cabinets, with its back against an uninterrupted wall and one side touching the cabinet end panel. "
+            "If there is no full-width empty bay, use the least-obstructed outer image edge with natural partial cropping; do not omit the refrigerator. "
+            "Never overlap, cover, or stand in front of existing cabinets, counters, sink, oven, door, or appliances. Match the room perspective, scale, shadows, and lighting. "
+            "Keep all existing cabinets, counters, sink, oven, door, walls, and floor unchanged. "
+            f"Picture 2 category: {category}."
+        )
+
+    def _build_refrigerator_and_rice_cooker_prompt(
+        self, products: list[dict[str, Any]]
+    ) -> str:
+        """Một prompt duy nhất cho cặp thiết bị sàn + thiết bị mặt bàn."""
+        refrigerator_index = next(
+            index
+            for index, product in enumerate(products, start=2)
+            if product.get("group_code") == "refrigerator"
+        )
+        rice_cooker_index = next(
+            index
+            for index, product in enumerate(products, start=2)
+            if product.get("group_code") == "rice_cooker"
+        )
+        return (
+            f"Mount the refrigerator in picture {refrigerator_index} and the rice cooker in picture {rice_cooker_index} into picture 1. "
+            "Picture 1 is a fixed kitchen photo. First map every placement surface: floor, walls, empty floor zones, base cabinets, upper cabinets, each countertop, shelves, sink, stove, door, and existing appliances. Treat occupied surfaces as unavailable. "
+            "HARD EXACT-COUNT CONSTRAINT: the final image must contain exactly one refrigerator from picture "
+            f"{refrigerator_index} and exactly one compact rice cooker from picture {rice_cooker_index}. Create no duplicate, clone, second unit, or additional appliance of any kind. "
+            "Place the refrigerator upright only on an unobstructed empty floor zone at the exposed outer end of the kitchen cabinets, back against the wall; never overlap or stand in front of cabinets, counters, sink, stove, door, or appliances. "
+            "Place the rice cooker exactly once, resting flat on one existing clear kitchen countertop, away from the counter edge and sink; never place it on the floor or another surface. "
+            "Keep all existing cabinets, counters, sink, stove, door, walls, floor, perspective, lighting, and shadows unchanged."
+        )
+
     def build_product_spec(
         self, product: Mapping[str, Any], index: int
     ) -> ProductPlacementSpec:
         """Xây dựng đặc tả (directive, rule, negative_terms) riêng cho từng sản phẩm."""
         group = (product.get("group_code") or "").strip().lower()
         name = (product.get("product_name") or "").strip().lower()
-        pname = product.get("product_name") or "Product"
-        placement = product.get("placement") or "on the existing floor or shelf naturally"
+        category_code = group
 
         # 1. Tra cứu trực tiếp theo group_code trong CATEGORY_RULES
         cfg = CATEGORY_RULES.get(group)
@@ -787,11 +907,14 @@ class ImageEditPromptBuilder:
             for _code, cat_cfg in CATEGORY_RULES.items():
                 if any(alias in group or alias in name for alias in cat_cfg.aliases):
                     cfg = cat_cfg
+                    category_code = _code
                     break
 
         # 3. Nếu tìm thấy cấu hình quy tắc
         if cfg is not None:
-            directive = cfg.directive_template.format(index=index, pname=pname)
+            directive = cfg.directive_template.format(
+                index=index, pname=category_prompt_name(category_code)
+            )
             return ProductPlacementSpec(
                 directive=directive,
                 rule=cfg.rule,
@@ -800,13 +923,16 @@ class ImageEditPromptBuilder:
 
         # 4. Dự phòng cho trường hợp sản phẩm hoàn toàn nằm ngoài 62 nhóm
         directive = (
-            f"- Picture {index} ({pname}): Place on an existing surface or existing floor in picture 1 {placement}. "
+            f"- Picture {index} ({category_prompt_name(category_code)}): Place on an existing surface or existing floor in picture 1. "
             "Do NOT add any new tables, desks, or furniture."
         )
         return ProductPlacementSpec(directive=directive, rule=None)
 
     def build_prompt(
-        self, products: list[dict[str, Any]], max_products: int = 2
+        self,
+        products: list[dict[str, Any]],
+        max_products: int = 2,
+        room_type: str | None = None,
     ) -> str:
         """Xây dựng toàn bộ prompt từ danh sách sản phẩm thực tế:
         - Mở đầu bằng lệnh chuẩn mực: Mount product in picture 2, picture 3 to picture 1. Do not change room structure.
@@ -817,6 +943,13 @@ class ImageEditPromptBuilder:
         if not selected:
             return self.default_prompt
 
+        if len(selected) == 1 and selected[0].get("group_code") == "refrigerator":
+            return self._build_refrigerator_only_prompt(selected[0])
+
+        selected_codes = {product.get("group_code") for product in selected}
+        if len(selected) == 2 and selected_codes == {"refrigerator", "rice_cooker"}:
+            return self._build_refrigerator_and_rice_cooker_prompt(selected)
+
         num_products = len(selected)
         has_tv = any(
             (p.get("group_code") == "tv")
@@ -826,19 +959,36 @@ class ImageEditPromptBuilder:
             for p in selected
         )
         tv_surface_note = "; TV flat on console shelf" if has_tv else ""
+        scene_analysis = ROOM_SCENE_ANALYSIS.get((room_type or "").strip().lower())
+
+        # Giữ nguyên header phòng khách/các phòng chưa có quy tắc riêng.
+        if scene_analysis:
+            surface_step = 2
+            anchor_step = 3
+            instance_step = 4
+            analysis_block = f"1. {scene_analysis}\n"
+        else:
+            surface_step = 1
+            anchor_step = 2
+            instance_step = 3
+            analysis_block = ""
 
         if num_products == 1:
             header = (
                 "Mount product in picture 2 to picture 1. Do not change room structure.\n"
-                "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
-                f"2. Anchored Placement: Mount product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float."
+                f"{analysis_block}"
+                f"{surface_step}. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
+                f"{anchor_step}. Anchored Placement: Mount product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float.\n"
+                f"{instance_step}. Single Instance: Place exactly one item. Strictly NO duplicate or cloned items."
             )
         else:
             refs = " and ".join(f"picture {i}" for i in range(2, num_products + 2))
             header = (
                 f"Mount products in {refs} to picture 1. Do not change room structure.\n"
-                "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
-                f"2. Anchored Placement: Mount each product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float."
+                f"{analysis_block}"
+                f"{surface_step}. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
+                f"{anchor_step}. Anchored Placement: Mount each product flat on matching surface (wall units high near ceiling; countertop items on counters; floor units on floor{tv_surface_note}). Never float.\n"
+                f"{instance_step}. Single Instance: Place exactly one instance of each product. Strictly NO duplicate or twin items."
             )
 
         specs: list[ProductPlacementSpec] = [
@@ -872,6 +1022,9 @@ class ImageEditPromptBuilder:
             f"**RULES & PRESERVATION**\n"
             f"{rules_block}"
         )
+        words = full_prompt.split()
+        if len(words) > self.MAX_PROMPT_WORDS:
+            full_prompt = " ".join(words[:self.MAX_PROMPT_WORDS]).rstrip()
         if len(full_prompt) > self.MAX_PROMPT_CHARS:
             full_prompt = full_prompt[:self.MAX_PROMPT_CHARS].rstrip()
         return full_prompt
@@ -916,12 +1069,16 @@ class ImageEditPromptBuilder:
         prompt = (
             "Mount products in picture 2 and picture 3 to picture 1. Do not change room structure.\n"
             "1. Surface Detection: Identify walls, ceiling, floor, counters, shelves in picture 1.\n"
-            "2. Anchored Placement: Place each product on matching surface (wall units high near ceiling; tabletop on counters; floor units on floor). Never float.\n\n"
+            "2. Anchored Placement: Place each product on matching surface (wall units high near ceiling; tabletop on counters; floor units on floor). Never float.\n"
+            "3. Single Instance: Place exactly one instance of each product. Strictly NO duplicate or twin items.\n\n"
             "- Picture 2, Picture 3: Product reference images to place inside picture 1.\n\n"
             "**RULES & PRESERVATION**\n"
             "1. Product Placement: Place each product according to realistic function. Never float. Do NOT add new tables.\n"
             f"{u_rules}"
         )
+        words = prompt.split()
+        if len(words) > self.MAX_PROMPT_WORDS:
+            prompt = " ".join(words[:self.MAX_PROMPT_WORDS]).rstrip()
         if len(prompt) > self.MAX_PROMPT_CHARS:
             prompt = prompt[:self.MAX_PROMPT_CHARS].rstrip()
         return prompt
@@ -929,7 +1086,8 @@ class ImageEditPromptBuilder:
     @property
     def default_negative_prompt(self) -> str:
         """Negative prompt mặc định tổng quát."""
-        neg = ", ".join(self.BASE_NEGATIVE_TERMS)
+        # Đồng nhất với `build_negative_prompt`: chỉ giữ mỗi negative term một lần.
+        neg = ", ".join(dict.fromkeys(self.BASE_NEGATIVE_TERMS))
         if len(neg) > self.MAX_NEGATIVE_PROMPT_CHARS:
             truncated = neg[:self.MAX_NEGATIVE_PROMPT_CHARS]
             if "," in truncated:
@@ -944,10 +1102,12 @@ _DEFAULT_BUILDER = ImageEditPromptBuilder()
 
 
 def build_room_edit_prompt(
-    products: list[dict[str, Any]], max_products: int = 2
+    products: list[dict[str, Any]], max_products: int = 2, room_type: str | None = None
 ) -> str:
     """Hàm tiện ích tương thích ngược để xây dựng prompt."""
-    return _DEFAULT_BUILDER.build_prompt(products, max_products=max_products)
+    return _DEFAULT_BUILDER.build_prompt(
+        products, max_products=max_products, room_type=room_type
+    )
 
 
 def build_room_edit_negative_prompt(

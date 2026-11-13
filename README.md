@@ -9,7 +9,7 @@ Hệ thống kết hợp **Computer Vision (Zero-Shot Object Detection)**, **Mô
 [Grounding DINO Tiny] ──(Apache-2.0)──> Nhận diện vật thể hiện có (Sofa, TV, Giường, Bàn...)
         │
         ├─ Xác suất đồng xuất hiện P_cooc(c|D) = 1 − Π(1 − P̂(π(c)|d))  (Ma trận COCO 45 class)
-        ├─ Điểm tương thích không gian W(c, r)                           (62 nhóm × 7 loại phòng)
+        ├─ Điểm tương thích không gian W(c, r)                           (62 nhóm × 3 loại phòng)
         └─ Final Score = P_cooc + W(c, r) ──> Xếp hạng 62 nhóm thiết bị
                                                        │
                                                        ▼
@@ -72,7 +72,7 @@ Phản hồi mẫu xác nhận sẵn sàng:
   "status": "ready",
   "model_source": "IDEA-Research/grounding-dino-tiny (grounding_dino)",
   "cooccurrence_source": "cooccurrence_matrix.json (45 class, 1717 ảnh train)",
-  "room_scores_source": "artifact category_room_scores.json (62 nhóm × 7 phòng) + mwg.categories",
+  "room_scores_source": "artifact category_room_scores.json (62 nhóm × 3 phòng) + mwg.categories",
   "catalog_source": "PostgreSQL mwg.product (1413 sản phẩm)"
 }
 ```

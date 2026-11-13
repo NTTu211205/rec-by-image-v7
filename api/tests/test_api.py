@@ -33,7 +33,7 @@ def test_health_ready(client: TestClient) -> None:
     body = r.json()
     assert body["ready"] is True
     assert body["status"] == "ready"
-    assert body["detector_classes"] == 45
+    assert body["detector_classes"] >= 45
     assert body["catalog_groups"] == 62
     assert body["room_scores_source"].startswith("artifact category_room_scores.json")
     assert body["cooccurrence_source"].startswith("cooccurrence_matrix.json")
@@ -51,6 +51,8 @@ def test_recommend_image(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["room_type"] == "living_room"
+    assert body["room_type_source"] == "provided"
+    assert body["room_detection_scores"] is None
     assert "detected_objects" in body
     assert len(body["recommendations"]) <= 3
 
@@ -72,6 +74,10 @@ def test_recommend_image_defaults(client: TestClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["room_type"] == "living_room"
+    assert body["room_type_source"] in {"inferred", "default"}
+    assert set(body["room_detection_scores"]) == {
+        "living_room", "bedroom", "kitchen"
+    }
     assert len(body["recommendations"]) <= 10
 
 
@@ -111,6 +117,16 @@ def test_invalid_room_type(client: TestClient) -> None:
     assert r.json()["error"]["code"] == "not_found"
 
 
+@pytest.mark.parametrize("room_type", ("bathroom", "dining_room", "home_office", "balcony"))
+def test_removed_room_types_are_rejected(client: TestClient, room_type: str) -> None:
+    r = client.post(
+        "/api/v1/recommendations/image",
+        files={"image": ("room.jpg", _jpeg(), "image/jpeg")},
+        params={"room_type": room_type},
+    )
+    assert r.status_code == 404
+
+
 def test_reject_non_image(client: TestClient) -> None:
     r = client.post(
         "/api/v1/recommendations/image",
@@ -141,6 +157,32 @@ def test_reject_tiny_image(client: TestClient) -> None:
 def test_image_required(client: TestClient) -> None:
     r = client.post("/api/v1/recommendations/image")
     assert r.status_code == 422
+
+
+def test_three_images_auto_requires_exactly_three_images(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/recommendations/images/auto",
+        files=[
+            ("images", ("one.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("two.jpg", _jpeg(), "image/jpeg")),
+        ],
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_image"
+
+
+def test_three_images_by_room_requires_exactly_three_room_types(client: TestClient) -> None:
+    r = client.post(
+        "/api/v1/recommendations/images/by-room",
+        files=[
+            ("images", ("one.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("two.jpg", _jpeg(), "image/jpeg")),
+            ("images", ("three.jpg", _jpeg(), "image/jpeg")),
+        ],
+        data=[("room_types", "living_room"), ("room_types", "bedroom")],
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_image"
 
 
 def test_cors_preflight_and_headers(client: TestClient) -> None:

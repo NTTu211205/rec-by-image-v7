@@ -12,11 +12,14 @@ một trong bốn là khởi động thất bại với `ArtifactError` / `DataS
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import httpx
 
 from app.core.config import Settings
 from app.core.exceptions import ArtifactError
@@ -50,8 +53,33 @@ class AppState:
     executor: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(max_workers=1, thread_name_prefix="infer")
     )
+    # Semaphore này thuộc AppState nên được chia sẻ giữa các route/request,
+    # thay vì tạo mới theo từng batch và vô tình vượt giới hạn gateway.
+    qwen_edit_semaphore: asyncio.Semaphore = field(init=False, repr=False)
+    qwen_http_client: httpx.AsyncClient = field(init=False, repr=False)
     pending: int = 0
     _pending_lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def __post_init__(self) -> None:
+        self.qwen_edit_semaphore = asyncio.Semaphore(
+            self.settings.qwen_max_concurrent_edits
+        )
+        timeout = httpx.Timeout(
+            self.settings.qwen_gateway_timeout_s,
+            connect=min(
+                self.settings.qwen_gateway_connect_timeout_s,
+                self.settings.qwen_gateway_timeout_s,
+            ),
+        )
+        connection_limit = self.settings.qwen_max_concurrent_edits
+        self.qwen_http_client = httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(
+                max_connections=connection_limit,
+                max_keepalive_connections=connection_limit,
+                keepalive_expiry=30.0,
+            ),
+        )
 
     @property
     def ready(self) -> bool:
@@ -160,6 +188,7 @@ def build_state(settings: Settings) -> AppState:
         default_top_k=settings.default_top_k,
         default_min_score=settings.default_min_score,
         default_products_per_group=settings.products_per_group,
+        default_min_price=settings.default_min_price,
     )
 
     # --- 4) Detector (Grounding DINO) ---
@@ -168,6 +197,8 @@ def build_state(settings: Settings) -> AppState:
         settings.model_device,
         settings.detect_jpeg_roundtrip,
         text_threshold=settings.model_text_threshold,
+        shortest_edge=settings.detect_shortest_edge,
+        longest_edge=settings.detect_longest_edge,
     )
     detector.load()
 

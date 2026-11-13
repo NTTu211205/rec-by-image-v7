@@ -34,6 +34,7 @@ def create_app(settings: Settings | None = None, *, state: AppState | None = Non
         try:
             yield
         finally:
+            await app.state.app_state.qwen_http_client.aclose()
             app.state.app_state.executor.shutdown(wait=False, cancel_futures=True)
 
     docs = settings.docs_enabled
