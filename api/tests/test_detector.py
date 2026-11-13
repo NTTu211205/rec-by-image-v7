@@ -27,8 +27,8 @@ class _FakeProcessor:
     def __call__(self, *, images, text, return_tensors: str, **kwargs):
         assert return_tensors == "pt"
         assert kwargs["images_kwargs"]["size"] == {
-            "shortest_edge": 512,
-            "longest_edge": 768,
+            "shortest_edge": 384,
+            "longest_edge": 640,
         }
         self.calls.append((images, text))
         return _FakeInputs(pixel_values="fake")

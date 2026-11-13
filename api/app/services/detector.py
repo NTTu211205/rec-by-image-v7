@@ -363,8 +363,8 @@ class Detector:
         device: str = "auto",
         jpeg_roundtrip: bool = True,
         text_threshold: float = DEFAULT_TEXT_THRESHOLD,
-        shortest_edge: int = 512,
-        longest_edge: int = 768,
+        shortest_edge: int = 384,
+        longest_edge: int = 640,
     ):
         self.model_path = Path(model_path) if isinstance(model_path, Path) else Path(str(model_path))
         self.model_id = str(model_path).strip() or DEFAULT_MODEL_ID

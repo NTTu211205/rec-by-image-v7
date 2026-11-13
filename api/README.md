@@ -72,7 +72,7 @@ Bảng ánh xạ `CLASS_PROMPTS` trong `app/services/detector.py` định nghĩa
 | `QWEN_GATEWAY_URL` | `https://ai.itmwg.vn/ai-mwg/qwen-edit-image` | URL cổng Qwen Image Edit Gateway |
 | `QWEN_API_KEY` | *(Key bảo mật MWG)* | API Key gửi qua header `apikey` |
 | `QWEN_MAX_CONCURRENT_EDITS` | `2` | Số request `images/edits` đồng thời tối đa trong toàn API process (1–3) |
-| `DETECT_SHORTEST_EDGE` / `DETECT_LONGEST_EDGE` | `512` / `768` | Kích thước resize Grounding DINO trước detect; ảnh gốc vẫn giữ nguyên cho Qwen |
+| `DETECT_SHORTEST_EDGE` / `DETECT_LONGEST_EDGE` | `384` / `640` | Kích thước resize Grounding DINO trước detect; ảnh gốc vẫn giữ nguyên cho Qwen |
 | `AUTO_GENERATE_IMAGE` | `false` | Tự động tạo ảnh phối cảnh nếu request không chỉ định |
 
 > [!CAUTION]

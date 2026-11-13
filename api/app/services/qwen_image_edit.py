@@ -20,7 +20,10 @@ logger = logging.getLogger("app.qwen_image_edit")
 
 DEFAULT_GATEWAY_URL = ""
 DEFAULT_API_KEY = ""
-DEFAULT_EDIT_TARGET_PIXELS = 650_000
+# Giảm độ phân giải ảnh đầu ra để gateway sinh ảnh nhanh hơn. Giá trị này
+# tương đương khoảng 0,30 MP (xấp xỉ 544x544 với ảnh vuông); kích thước thực tế
+# vẫn được căn theo tỷ lệ ảnh phòng và làm tròn về bội số 32.
+DEFAULT_EDIT_TARGET_PIXELS = 300_000
 EDIT_SIZE_MULTIPLE = 32
 EDIT_MIN_SIDE = 256
 EDIT_MAX_SIDE = 2048
@@ -51,7 +54,7 @@ def dynamic_edit_size(
     image_input: bytes | Image.Image | str,
     target_pixels: int = DEFAULT_EDIT_TARGET_PIXELS,
 ) -> str | None:
-    """Tạo ``WIDTHxHEIGHT`` gần 0,65MP, giữ tỷ lệ và bội số 32.
+    """Tạo ``WIDTHxHEIGHT`` gần 0,30MP, giữ tỷ lệ và bội số 32.
 
     Gateway chỉ chấp nhận cạnh 256–2048 và bội số 32. URL không mang thông tin
     kích thước nên trả ``None``; pipeline chính luôn truyền PIL Image của phòng.
