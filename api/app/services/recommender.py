@@ -131,12 +131,16 @@ KITCHEN_ANCHOR_LABELS = frozenset({
 ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
     **{label: {"kitchen": 4.0} for label in KITCHEN_ANCHOR_LABELS},
     "Bed": {"bedroom": 4.0},
-    "Pillow": {"bedroom": 1.5},
-    "Throw Blanket": {"bedroom": 1.5},
-    "Side Table": {"bedroom": 1.2},
+    # Gối tựa lưng trang trí trên sofa/ghế bành phòng khách cũng rất phổ biến,
+    # không gán 100% cho bedroom để tránh lấn át phòng khách khi không có giường.
+    "Pillow": {"bedroom": 1.0, "living_room": 0.6},
+    "Throw Blanket": {"bedroom": 1.5, "living_room": 0.6},
+    "Side Table": {"bedroom": 1.2, "living_room": 1.0},
     "Sofa": {"living_room": 3.5},
+    "Accent Chair": {"living_room": 2.5},
+    "Bench/Ottoman": {"living_room": 1.0, "bedroom": 0.5},
     "Coffee Table": {"living_room": 2.5},
-    "Entertainment Center": {"living_room": 2.0},
+    "Entertainment Center": {"living_room": 2.5},
     "TV": {"living_room": 1.7, "bedroom": 0.4},
     "Speaker": {"living_room": 1.2},
     "Fireplace": {"living_room": 2.5},
@@ -147,8 +151,9 @@ ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
     "Tableware": {"kitchen": 1.0},
     "Mugs Teacups": {"kitchen": 0.8},
     "Table": {"kitchen": 0.3},
-    "Chair": {"living_room": 0.15, "bedroom": 0.15},
-    "Cabinet": {"kitchen": 0.5, "bedroom": 0.2},
+    "Chair": {"living_room": 0.2, "bedroom": 0.15},
+    # Tủ kệ dài (credenza, TV console) là đặc trưng phổ biến của phòng khách
+    "Cabinet": {"living_room": 0.8, "kitchen": 0.5, "bedroom": 0.2},
     "Mirror": {"bedroom": 0.5},
     "Rug": {"living_room": 0.4, "bedroom": 0.4},
     # Cây xanh thường là điểm nhấn trang trí ở phòng khách. Giữ tín hiệu phòng

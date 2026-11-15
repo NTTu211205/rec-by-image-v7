@@ -210,13 +210,16 @@ def test_checkpoint_classes_match_matrix() -> None:
 
 def test_default_detector_prompts_include_all_registered_labels() -> None:
     """Không truyền room_type phải chọn prompt đầy đủ, không phải living room."""
-    from app.services.detector import CLASS_PROMPTS, Detector, build_chunked_prompts
+    from app.services.detector import CLASS_PROMPTS, DEFAULT_CHUNK_SIZE, Detector, build_chunked_prompts
 
     detector = Detector(device="cpu")
     assert detector.room_prompts["default"] == build_chunked_prompts(
-        list(CLASS_PROMPTS), chunk_size=25
+        list(CLASS_PROMPTS), chunk_size=DEFAULT_CHUNK_SIZE
     )
-    assert len(detector.room_prompts["default"]) > len(detector.room_prompts["living_room"])
+    # Default prompt chứa toàn bộ 66 classes, nhiều hơn living room (48 classes)
+    default_text = " ".join(detector.room_prompts["default"])
+    living_text = " ".join(detector.room_prompts["living_room"])
+    assert len(default_text) > len(living_text)
 
 
 # --- Metadata nhóm ----------------------------------------------------------

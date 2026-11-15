@@ -25,6 +25,10 @@ logger = logging.getLogger("app.detector")
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_TEXT_THRESHOLD = 0.25
+# 66 classes chia thành 2 chunks (33 classes/chunk) giúp giảm số lượt forward pass
+# từ 3 xuống 2 lượt, tiết kiệm ~33% thời gian inference Grounding DINO trên CPU
+# trong khi token count mỗi chunk (< 240 tokens) vẫn đảm bảo an toàn tuyệt đối với BERT (< 256).
+DEFAULT_CHUNK_SIZE = 33
 
 # ---------------------------------------------------------------------------
 # Ánh xạ class chuẩn của detector -> cụm từ prompt tiếng Anh cho Grounding DINO.
@@ -303,9 +307,9 @@ def build_prompt(classes: list[str] | tuple[str, ...] | None = None) -> str:
 
 def build_chunked_prompts(
     classes: list[str] | tuple[str, ...] | None = None,
-    chunk_size: int = 32,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
 ) -> list[str]:
-    """Tách danh sách class thành các chuỗi prompt < 180 tokens để an toàn với giới hạn 256 của BERT."""
+    """Tách danh sách class thành các chuỗi prompt < 240 tokens để an toàn với giới hạn 256 của BERT."""
     target_classes = list(classes if classes is not None else CLASS_PROMPTS.keys())
     chunks: list[str] = []
     for i in range(0, len(target_classes), chunk_size):
@@ -380,10 +384,10 @@ class Detector:
         self._model = None
         self._classes: list[str] = list(CLASS_PROMPTS.keys())
         self.room_prompts: dict[str, list[str]] = {
-            room: build_chunked_prompts(classes, chunk_size=25)
+            room: build_chunked_prompts(classes, chunk_size=DEFAULT_CHUNK_SIZE)
             for room, classes in ROOM_CLASSES.items()
         }
-        self.room_prompts["default"] = build_chunked_prompts(self._classes, chunk_size=25)
+        self.room_prompts["default"] = build_chunked_prompts(self._classes, chunk_size=DEFAULT_CHUNK_SIZE)
         self.prompts: list[str] = self.room_prompts.get("living_room") or self.room_prompts["default"]
         self.prompt: str = self.prompts[0] if self.prompts else ""
         self._post_process_uses_threshold: bool = False
