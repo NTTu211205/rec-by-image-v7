@@ -98,8 +98,8 @@ class Settings(BaseSettings):
     qwen_gateway_timeout_s: float = Field(60.0, gt=0)
     qwen_gateway_connect_timeout_s: float = Field(10.0, gt=0)
     # Giới hạn dùng chung cho mọi request gọi Qwen trong cùng API process.
-    # Batch ba phòng mặc định chạy hai edits song song để không quá tải gateway.
-    qwen_max_concurrent_edits: int = Field(2, ge=1, le=3)
+    # Batch ba phòng mặc định chạy ba edits song song.
+    qwen_max_concurrent_edits: int = Field(3, ge=1, le=3)
     auto_generate_image: bool = False
 
     # --- Giới hạn đầu vào ---
