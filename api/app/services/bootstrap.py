@@ -71,7 +71,7 @@ class AppState:
                 self.settings.qwen_gateway_timeout_s,
             ),
         )
-        connection_limit = self.settings.qwen_max_concurrent_edits
+        connection_limit = max(12, self.settings.qwen_max_concurrent_edits * 4)
         self.qwen_http_client = httpx.AsyncClient(
             timeout=timeout,
             limits=httpx.Limits(

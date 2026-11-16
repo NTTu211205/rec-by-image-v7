@@ -424,10 +424,10 @@ class Detector:
         self,
         model_path: str | Path = DEFAULT_MODEL_ID,
         device: str = "auto",
-        jpeg_roundtrip: bool = True,
+        jpeg_roundtrip: bool = False,
         text_threshold: float = DEFAULT_TEXT_THRESHOLD,
-        shortest_edge: int = 384,
-        longest_edge: int = 640,
+        shortest_edge: int = 320,
+        longest_edge: int = 512,
     ):
         self.model_path = Path(model_path) if isinstance(model_path, Path) else Path(str(model_path))
         self.model_id = str(model_path).strip() or DEFAULT_MODEL_ID
@@ -470,12 +470,59 @@ class Detector:
             )
 
         try:
+            import os
+            import torch
             from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+
+            if self.device == "cpu":
+                cpu_cores = os.cpu_count() or 4
+                # Trên Apple Silicon / multi-core hỗn hợp (P-cores + E-cores),
+                # giới hạn số luồng tránh nghẽn OpenMP barrier trên các nhân E-core chậm.
+                optimal_threads = 8 if cpu_cores >= 10 else max(1, cpu_cores)
+                torch.set_num_threads(optimal_threads)
 
             self._processor = AutoProcessor.from_pretrained(target)
             self._model = AutoModelForZeroShotObjectDetection.from_pretrained(target)
             self._model.to(self.device)
             self._model.eval()
+
+            # Bọc cache cho BERT text_backbone vì các chuỗi prompt theo phòng là cố định.
+            base_model = getattr(self._model, "model", None)
+            orig_tb = getattr(base_model, "text_backbone", None)
+            if orig_tb is not None:
+                tb_cache: dict[tuple[int, ...], object] = {}
+
+                class _CachedTextBackbone(torch.nn.Module):
+                    def __init__(self, inner: torch.nn.Module) -> None:
+                        super().__init__()
+                        self.inner = inner
+
+                    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, **kwargs):
+                        if input_ids is not None and input_ids.shape[0] == 1:
+                            key = tuple(input_ids[0].tolist())
+                            cached = tb_cache.get(key)
+                            if cached is not None:
+                                return cached
+                            out = self.inner(
+                                input_ids,
+                                attention_mask=attention_mask,
+                                token_type_ids=token_type_ids,
+                                position_ids=position_ids,
+                                **kwargs,
+                            )
+                            if len(tb_cache) < 16:
+                                tb_cache[key] = out
+                            return out
+                        return self.inner(
+                            input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                             **kwargs,
+                        )
+
+                base_model.text_backbone = _CachedTextBackbone(orig_tb)
+
             self.family = "grounding_dino"
 
             sig = inspect.signature(self._processor.post_process_grounded_object_detection)
@@ -509,7 +556,9 @@ class Detector:
 
     def warmup(self) -> None:
         if self.loaded:
-            self.detect(Image.new("RGB", (64, 64)), confidence=0.99, room_type="living_room")
+            dummy = Image.new("RGB", (64, 64))
+            self.detect(dummy, confidence=0.99, room_type=None)
+            self.detect(dummy, confidence=0.99, room_type="living_room")
 
     def _prepare_image(self, img: Image.Image) -> Image.Image:
         """Chuẩn hoá đầu vào ảnh trước khi đưa vào Grounding DINO."""

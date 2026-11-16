@@ -44,12 +44,12 @@ class Settings(BaseSettings):
     model_confidence: float = Field(0.30, ge=0, le=1)
     model_text_threshold: float = Field(0.25, ge=0, le=1)
     # Tái tạo bước nén JPEG trong bộ nhớ để chuẩn hoá ảnh RGB đầu vào.
-    detect_jpeg_roundtrip: bool = True
+    detect_jpeg_roundtrip: bool = False
     # Grounding DINO mặc định resize shortest edge lên 800px. Interior object
-    # detection chỉ cần bố cục/vật thể lớn nên 384px (longest 640px) giảm mạnh
-    # CPU latency (~38%) mà vẫn giữ trọn vẹn các vật thể và neo phòng.
-    detect_shortest_edge: int = Field(384, ge=320, le=800)
-    detect_longest_edge: int = Field(640, ge=480, le=1333)
+    # detection chỉ cần bố cục/vật thể lớn nên 320px (longest 512px) giảm mạnh
+    # CPU latency mà vẫn giữ trọn vẹn 100% khung hình và các vật thể neo phòng.
+    detect_shortest_edge: int = Field(320, ge=256, le=800)
+    detect_longest_edge: int = Field(512, ge=384, le=1333)
     # Bắt buộc bộ class chuẩn của detector khớp `cooccurrence_matrix.json`.
     require_class_match: bool = True
 

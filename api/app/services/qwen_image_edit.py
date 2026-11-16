@@ -6,6 +6,7 @@ Gọi các endpoint theo tài liệu `qwen-image-edit.openapi.json`:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import math
@@ -14,19 +15,25 @@ from io import BytesIO
 from typing import Any
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageOps
 
 logger = logging.getLogger("app.qwen_image_edit")
 
 DEFAULT_GATEWAY_URL = ""
 DEFAULT_API_KEY = ""
-# Cân bằng độ phân giải ảnh đầu ra: ~0,48 MP (khoảng 800x608 hoặc 832x576)
-# để Qwen có đủ không gian chi tiết gắn sản phẩm vào phòng (tránh mất sản phẩm),
-# đồng thời giữ tốc độ sinh ảnh nhanh hơn mức 0,65 MP trước đây.
-DEFAULT_EDIT_TARGET_PIXELS = 480_000
+# Độ phân giải ảnh phòng đầu ra: ~0,36 MP (khoảng 704x512 hoặc 672x544)
+# giúp giảm 25% số pixels GPU Qwen phải xử lý so với 0,48 MP trong khi vẫn
+# giữ đủ chi tiết cho cả các thiết bị nhỏ trên bàn bếp.
+DEFAULT_EDIT_TARGET_PIXELS = 360_000
+DEFAULT_PRODUCT_MAX_SIDE = 256
+DEFAULT_JPEG_QUALITY = 75
+PRODUCT_CACHE_MAX_SIZE = 256
 EDIT_SIZE_MULTIPLE = 32
 EDIT_MIN_SIDE = 256
 EDIT_MAX_SIDE = 2048
+
+# Cache RAM cho ảnh sản phẩm đã tải về và scale (url, max_side) -> data URI
+_PRODUCT_IMAGE_CACHE: dict[tuple[str, int], str] = {}
 
 from app.services.prompt_builder import (
     DEFAULT_ROOM_EDIT_NEGATIVE_PROMPT,
@@ -37,17 +44,82 @@ from app.services.prompt_builder import (
 )
 
 
+def _to_rgb(img: Image.Image) -> Image.Image:
+    """Chuyển PIL Image sang RGB; nếu ảnh có nền trong suốt (RGBA/LA/P) thì lót nền trắng."""
+    if img.mode == "RGB":
+        return img
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        rgba = img.convert("RGBA")
+        bg = Image.new("RGB", rgba.size, (255, 255, 255))
+        bg.paste(rgba, mask=rgba.split()[3])
+        return bg
+    return img.convert("RGB")
+
+
 def optimize_image(img: Image.Image, max_side: int = 1024) -> Image.Image:
-    """Giới hạn kích thước ảnh tối đa max_side để giảm băng thông và tăng tốc GPU inference."""
+    """Thu nhỏ (scale) toàn bộ ảnh theo tỷ lệ sao cho cạnh lớn nhất <= max_side (không cắt ảnh)."""
     w, h = img.size
     if max(w, h) > max_side:
         scale = max_side / float(max(w, h))
-        new_w = max(32, int(w * scale))
-        new_h = max(32, int(h * scale))
-        new_w = (new_w // 32) * 32 or 32
-        new_h = (new_h // 32) * 32 or 32
+        new_w = max(32, round((w * scale) / 32) * 32)
+        new_h = max(32, round((h * scale) / 32) * 32)
         return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     return img
+
+
+def optimize_product_image(img: Image.Image, target_side: int = DEFAULT_PRODUCT_MAX_SIDE) -> Image.Image:
+    """Contain + đệm nền trắng về khung vuông target_side×target_side (vd: 256×256).
+
+    Giữ nguyên 100% tỷ lệ vật lý và toàn bộ chi tiết sản phẩm (0% cắt rìa, 0% méo hình).
+    """
+    side = max(EDIT_MIN_SIDE, round(target_side / EDIT_SIZE_MULTIPLE) * EDIT_SIZE_MULTIPLE)
+    rgb = _to_rgb(img)
+    return ImageOps.pad(
+        rgb,
+        (side, side),
+        method=Image.Resampling.LANCZOS,
+        color=(255, 255, 255),
+        centering=(0.5, 0.5),
+    )
+
+
+def parse_edit_size(size: str | None) -> tuple[int, int] | None:
+    """Tách chuỗi ``WIDTHxHEIGHT`` thành ``(width, height)`` hợp lệ."""
+    if not size or "x" not in size:
+        return None
+    try:
+        w_str, h_str = size.lower().strip().split("x", 1)
+        w, h = int(w_str), int(h_str)
+        if w > 0 and h > 0:
+            return w, h
+    except ValueError:
+        pass
+    return None
+
+
+def scale_image_to_size(
+    image_input: bytes | Image.Image | str,
+    target_size: str | None,
+) -> bytes | Image.Image | str:
+    """Scale toàn bộ ảnh phòng khớp 1:1 với ``target_size`` (WIDTHxHEIGHT), không cắt rìa."""
+    dims = parse_edit_size(target_size)
+    if dims is None:
+        return image_input
+    target_w, target_h = dims
+    try:
+        if isinstance(image_input, Image.Image):
+            rgb = _to_rgb(image_input)
+        elif isinstance(image_input, bytes):
+            with Image.open(BytesIO(image_input)) as opened:
+                rgb = _to_rgb(opened)
+        else:
+            return image_input
+    except Exception:  # noqa: BLE001
+        return image_input
+
+    if rgb.size != (target_w, target_h):
+        rgb = rgb.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    return rgb
 
 
 def dynamic_edit_size(
@@ -81,10 +153,10 @@ def dynamic_edit_size(
         center = round(value / EDIT_SIZE_MULTIPLE) * EDIT_SIZE_MULTIPLE
         return sorted({
             max(EDIT_MIN_SIDE, min(EDIT_MAX_SIDE, center + offset))
-            for offset in (-EDIT_SIZE_MULTIPLE, 0, EDIT_SIZE_MULTIPLE)
+            for offset in range(-128, 129, EDIT_SIZE_MULTIPLE)
         })
 
-    # Ưu tiên giữ tỷ lệ (hệ số 4), sau đó mới tối thiểu sai lệch số pixel.
+    # Ưu tiên giữ tỷ lệ khớp sát tuyệt đối (hệ số 6), sau đó mới tối thiểu sai lệch số pixel.
     best_width, best_height = min(
         (
             (candidate_width, candidate_height)
@@ -92,14 +164,41 @@ def dynamic_edit_size(
             for candidate_height in candidates(ideal_height)
         ),
         key=lambda size: (
-            4.0 * abs(math.log((size[0] / size[1]) / aspect))
+            6.0 * abs(math.log((size[0] / size[1]) / aspect))
             + abs(math.log((size[0] * size[1]) / target_pixels))
         ),
     )
     return f"{best_width}x{best_height}"
 
 
-def to_data_uri(image_input: bytes | Image.Image | str, format: str = "JPEG") -> str:
+def _encode_image_bytes(
+    rgb: Image.Image,
+    format: str = "JPEG",
+    quality: int = DEFAULT_JPEG_QUALITY,
+) -> bytes:
+    """Nén ảnh tối ưu dung lượng (strip EXIF/ICC, Huffman optimize, subsampling 4:2:0)."""
+    buf = BytesIO()
+    fmt = format.upper()
+    if fmt in ("JPEG", "JPG"):
+        rgb.save(
+            buf,
+            format="JPEG",
+            quality=quality,
+            optimize=True,
+            progressive=True,
+            subsampling=2,
+        )
+    else:
+        rgb.save(buf, format=fmt, quality=quality, optimize=True)
+    return buf.getvalue()
+
+
+def to_data_uri(
+    image_input: bytes | Image.Image | str,
+    format: str = "JPEG",
+    max_side: int = 1024,
+    quality: int = DEFAULT_JPEG_QUALITY,
+) -> str:
     """Chuyển đổi bytes, PIL Image hoặc URL sang định dạng data URI / URL hợp lệ."""
     if isinstance(image_input, str):
         if image_input.startswith(("http://", "https://", "data:")):
@@ -109,18 +208,17 @@ def to_data_uri(image_input: bytes | Image.Image | str, format: str = "JPEG") ->
 
     if isinstance(image_input, bytes):
         try:
-            im = Image.open(BytesIO(image_input))
-            return to_data_uri(im, format=format)
+            with Image.open(BytesIO(image_input)) as im:
+                return to_data_uri(_to_rgb(im), format=format, max_side=max_side, quality=quality)
         except Exception:
             b64 = base64.b64encode(image_input).decode("ascii")
             return f"data:image/{format.lower()};base64,{b64}"
 
     if isinstance(image_input, Image.Image):
-        buf = BytesIO()
-        rgb = image_input.convert("RGB") if image_input.mode != "RGB" else image_input
-        rgb = optimize_image(rgb, max_side=1024)
-        rgb.save(buf, format=format, quality=85)
-        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        rgb = _to_rgb(image_input)
+        rgb = optimize_image(rgb, max_side=max_side)
+        raw_bytes = _encode_image_bytes(rgb, format=format, quality=quality)
+        b64 = base64.b64encode(raw_bytes).decode("ascii")
         return f"data:image/{format.lower()};base64,{b64}"
 
     raise ValueError(f"Không hỗ trợ kiểu ảnh: {type(image_input)}")
@@ -200,6 +298,58 @@ class QwenImageEditClient:
     def _timeout(self, total: float | None = None) -> httpx.Timeout:
         t = total if total is not None else self.timeout
         return httpx.Timeout(t, connect=min(self.connect_timeout, t))
+
+    async def _fetch_and_scale_product_image(
+        self,
+        image_ref: bytes | Image.Image | str,
+        max_side: int = DEFAULT_PRODUCT_MAX_SIDE,
+    ) -> str:
+        """Tải ảnh sản phẩm về RAM, scale thu nhỏ toàn bộ (không cắt rìa) và chuyển sang Data URI."""
+        if isinstance(image_ref, (bytes, Image.Image)):
+            return to_data_uri(image_ref, max_side=max_side)
+
+        if not isinstance(image_ref, str) or not image_ref.startswith(("http://", "https://")):
+            return to_data_uri(image_ref, max_side=max_side)
+
+        cache_key = (image_ref, max_side)
+        cached = _PRODUCT_IMAGE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        dl_timeout = httpx.Timeout(8.0, connect=4.0)
+        try:
+            if self.http_client is not None:
+                resp = await self.http_client.get(
+                    image_ref,
+                    timeout=dl_timeout,
+                    follow_redirects=True,
+                )
+            else:
+                async with httpx.AsyncClient(timeout=dl_timeout, follow_redirects=True) as client:
+                    resp = await client.get(image_ref)
+
+            if getattr(resp, "status_code", None) == 200 and getattr(resp, "content", None):
+                with Image.open(BytesIO(resp.content)) as im:
+                    orig_size = im.size
+                    scaled = optimize_product_image(im, target_side=max_side)
+                    uri = to_data_uri(scaled, max_side=max_side)
+                if len(_PRODUCT_IMAGE_CACHE) >= PRODUCT_CACHE_MAX_SIZE:
+                    _PRODUCT_IMAGE_CACHE.pop(next(iter(_PRODUCT_IMAGE_CACHE)))
+                _PRODUCT_IMAGE_CACHE[cache_key] = uri
+                logger.info(
+                    "Đã tải & scale ảnh sản phẩm (contain+pad): url=%s, orig=%sx%s -> scaled=%sx%s (%d KB)",
+                    image_ref,
+                    orig_size[0],
+                    orig_size[1],
+                    scaled.size[0],
+                    scaled.size[1],
+                    len(uri) // 1024,
+                )
+                return uri
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Không tải được ảnh sản phẩm %s (%s), giữ nguyên URL", image_ref, exc)
+
+        return image_ref
 
     async def edit_image(
         self,
@@ -312,17 +462,25 @@ class QwenImageEditClient:
 
         # Gateway cấu hình max_images = 3 (1 phòng + tối đa 2 sản phẩm).
         selected_products = [product for product in products[:2] if product.get("image_url")]
-        images_list: list[bytes | Image.Image | str] = [room_image]
-
-        for prod in selected_products:
-            img_url = prod.get("image_url")
-            images_list.append(img_url)
-
-        if len(images_list) < 2:
+        if not selected_products:
             return PlaceResult(
                 success=False,
                 error="Không có sản phẩm nào có hình ảnh hợp lệ để ghép",
             )
+
+        resolved_size = size if size is not None else dynamic_edit_size(room_image)
+        # 1) Ảnh phòng (Picture 1): chỉ scale toàn bộ khung hình khớp 1:1 với resolved_size,
+        # tuyệt đối không cắt (crop) mất các phần ở rìa ảnh.
+        scaled_room = scale_image_to_size(room_image, resolved_size)
+        # 2) Ảnh sản phẩm (Picture 2, Picture 3): tải song song về RAM và scale thu nhỏ
+        # giữ nguyên tỷ lệ (không cắt mất chân/cạnh sản phẩm).
+        scaled_product_uris = await asyncio.gather(
+            *(
+                self._fetch_and_scale_product_image(prod["image_url"])
+                for prod in selected_products
+            )
+        )
+        images_list: list[bytes | Image.Image | str] = [scaled_room, *scaled_product_uris]
 
         prompt_builder = ImageEditPromptBuilder()
 
@@ -340,7 +498,6 @@ class QwenImageEditClient:
         primary_name = selected_products[0].get("product_name")
         primary_placement = selected_products[0].get("placement")
 
-        resolved_size = size if size is not None else dynamic_edit_size(room_image)
         result = await self.edit_image(
             prompt=final_prompt,
             images=images_list,

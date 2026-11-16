@@ -22,6 +22,7 @@ from app.services.qwen_image_edit import (
     build_room_edit_prompt,
     dynamic_edit_size,
     extract_image_from_response,
+    scale_image_to_size,
     to_data_uri,
 )
 
@@ -62,15 +63,68 @@ def test_to_data_uri() -> None:
 
 
 def test_dynamic_edit_size_keeps_aspect_near_048_megapixel() -> None:
-    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "832x576"
-    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "800x608"
-    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "832x576"
+    assert dynamic_edit_size(Image.new("RGB", (900, 628))) == "736x512"
+    assert dynamic_edit_size(Image.new("RGB", (960, 730))) == "672x512"
+    assert dynamic_edit_size(Image.new("RGB", (700, 478))) == "704x480"
     assert dynamic_edit_size("https://example.com/room.jpg") is None
 
-    for size in ("832x576", "800x608"):
+    for size in ("736x512", "672x512", "704x480"):
         width, height = (int(value) for value in size.split("x"))
         assert width % 32 == 0 and height % 32 == 0
-        assert 450_000 <= width * height <= 520_000
+        assert 330_000 <= width * height <= 400_000
+
+
+def test_scale_room_image_and_download_product_image() -> None:
+    """Ảnh phòng được scale khớp 1:1 với size (không crop) và ảnh sản phẩm được tải về + contain-pad 256x256."""
+    import base64
+
+    room = Image.new("RGB", (1200, 800), color="blue")
+    scaled_room = scale_image_to_size(room, "768x512")
+    assert isinstance(scaled_room, Image.Image)
+    assert scaled_room.size == (768, 512)
+
+    async def _run() -> None:
+        prod_buf = io.BytesIO()
+        Image.new("RGBA", (1020, 680), (255, 0, 0, 128)).save(prod_buf, format="PNG")
+        prod_bytes = prod_buf.getvalue()
+
+        class _FakeGetResp:
+            status_code = 200
+            content = prod_bytes
+
+        shared_client = AsyncMock(spec=httpx.AsyncClient)
+        shared_client.get.return_value = _FakeGetResp()
+        shared_client.post.return_value = FakeResponse(
+            {"data": [{"b64_json": "composed_b64"}]}
+        )
+
+        client = QwenImageEditClient(
+            "https://ai.itmwg.vn/ai-mwg/qwen-edit-image",
+            api_key="test-key",
+            http_client=shared_client,
+        )
+        res = await client.mount_products_to_room(
+            room_image=room,
+            products=[
+                {
+                    "group_code": "tv",
+                    "product_name": "Samsung TV",
+                    "image_url": "https://cdn.tgdd.vn/Products/Images/1942/test-tv.png",
+                }
+            ],
+        )
+        assert res.success is True
+        payload = shared_client.post.call_args.kwargs["json"]
+        assert payload["size"] == "768x512"
+        # Picture 1 (room: 768x512) và Picture 2 (product: 256x256) đều đã được scale và chuyển sang data URI
+        for idx, expected_size in ((0, (768, 512)), (1, (256, 256))):
+            uri = payload["images"][idx]
+            assert uri.startswith("data:image/jpeg;base64,")
+            raw = base64.b64decode(uri.split(",", 1)[1])
+            with Image.open(io.BytesIO(raw)) as decoded:
+                assert decoded.size == expected_size
+
+    asyncio.run(_run())
 
 
 def test_extract_image_from_response() -> None:
@@ -130,7 +184,7 @@ def test_qwen_mount_products_to_room_success() -> None:
             assert len(payload["images"]) == 3
             assert payload["images"][1] == "https://cdn.example.com/tv.jpg"
             assert payload["images"][2] == "https://cdn.example.com/speaker.jpg"
-            assert payload["size"] == "832x576"
+            assert payload["size"] == "736x512"
             assert payload["steps"] == 6
             assert payload["cfg"] == 1.0
             assert mock_post.call_args.args[0].endswith("/v1/images/edits")
