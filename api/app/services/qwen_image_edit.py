@@ -359,7 +359,7 @@ class QwenImageEditClient:
         size: str | None = None,
         n: int = 1,
         seed: int | None = None,
-        steps: int | None = 6,
+        steps: int | None = 4,
         cfg: float | None = 1.0,
         negative_prompt: str = " ",
     ) -> PlaceResult:
@@ -448,7 +448,7 @@ class QwenImageEditClient:
         size: str | None = None,
         n: int = 1,
         seed: int | None = None,
-        steps: int | None = 6,
+        steps: int | None = 4,
         cfg: float | None = 1.0,
     ) -> PlaceResult:
         """Ghép các sản phẩm vào ảnh phòng qua endpoint /v1/images/edits theo định dạng:

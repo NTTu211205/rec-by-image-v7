@@ -47,6 +47,20 @@ MERGED_CLASSES: dict[str, str] = {
     "Infrared Cooker": "Electric Cooktop",
 }
 
+# Các class đồ trang trí/vật dụng nhỏ trong ma trận COCO không có trọng số phòng
+# và không ánh xạ tới sản phẩm ĐMX, được lược bỏ khỏi prompt Grounding DINO.
+PRUNED_MATRIX_CLASSES: frozenset[str] = frozenset({
+    "Books",
+    "Candle",
+    "Clock",
+    "Curtain Rod",
+    "Decor",
+    "Phone",
+    "Stool",
+    "Table Lamp",
+    "Vase",
+})
+
 # ---------------------------------------------------------------------------
 # Ánh xạ class chuẩn của detector -> cụm từ prompt tiếng Anh rút gọn cho Grounding DINO.
 # Mỗi class chỉ giữ 1–2 cụm từ đại diện ngắn gọn nhất để toàn bộ prompt nằm trong
@@ -54,21 +68,16 @@ MERGED_CLASSES: dict[str, str] = {
 # `EXTRA_LABEL_ALIASES` để `normalize_label` vẫn quy đổi đầy đủ.
 # ---------------------------------------------------------------------------
 CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
-    # --- 44 class nội thất cơ bản (Monitor đã gộp vào TV) ---
+    # --- 35 class nội thất cơ bản (giữ Curtain, Picture Frame, Wall Art; bỏ 9 class trang trí nhỏ) ---
     "Accent Chair": ("armchair",),
     "Air Conditioner": ("air conditioner",),
     "Basket/Bin": ("trash bin", "basket"),
     "Bed": ("bed",),
     "Bench/Ottoman": ("ottoman",),
-    "Books": ("books",),
     "Cabinet": ("cabinet",),
-    "Candle": ("candle",),
     "Chair": ("chair",),
-    "Clock": ("clock",),
     "Coffee Table": ("coffee table",),
     "Curtain": ("curtain",),
-    "Curtain Rod": ("curtain rod",),
-    "Decor": ("decor",),
     "Desk Lamp": ("desk lamp",),
     "Entertainment Center": ("tv stand",),
     "Fan": ("fan",),
@@ -79,7 +88,6 @@ CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
     "Mirror": ("mirror",),
     "Mugs Teacups": ("mug",),
     "Organizer Storage": ("storage box",),
-    "Phone": ("phone",),
     "Picture Frame": ("picture frame",),
     "Pillow": ("pillow",),
     "Plant": ("plant",),
@@ -92,13 +100,10 @@ CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
     "Side Table": ("nightstand", "side table"),
     "Sofa": ("sofa",),
     "Speaker": ("speaker",),
-    "Stool": ("stool",),
     "TV": ("tv", "monitor"),
     "Table": ("dining table",),
-    "Table Lamp": ("table lamp",),
     "Tableware": ("tableware",),
     "Throw Blanket": ("blanket",),
-    "Vase": ("vase",),
     "Wall Art": ("wall art",),
 
     # --- 18 Danh mục thiết bị & gia dụng Nhà bếp (gộp bếp điện vào Electric Cooktop) ---
@@ -134,15 +139,10 @@ LIVING_ROOM_CLASSES: tuple[str, ...] = (
     "Air Conditioner",
     "Basket/Bin",
     "Bench/Ottoman",
-    "Books",
     "Cabinet",
-    "Candle",
     "Chair",
-    "Clock",
     "Coffee Table",
     "Curtain",
-    "Curtain Rod",
-    "Decor",
     "Desk Lamp",
     "Entertainment Center",
     "Fan",
@@ -153,7 +153,6 @@ LIVING_ROOM_CLASSES: tuple[str, ...] = (
     "Mirror",
     "Mugs Teacups",
     "Organizer Storage",
-    "Phone",
     "Picture Frame",
     "Pillow",
     "Plant",
@@ -166,13 +165,10 @@ LIVING_ROOM_CLASSES: tuple[str, ...] = (
     "Side Table",
     "Sofa",
     "Speaker",
-    "Stool",
     "TV",
     "Table",
-    "Table Lamp",
     "Tableware",
     "Throw Blanket",
-    "Vase",
     "Wall Art",
     # Tiện ích gia dụng có thể đặt ở phòng khách
     "Beverage Cooler",
@@ -209,7 +205,6 @@ BEDROOM_CLASSES: tuple[str, ...] = (
     "Pillow",
     "Throw Blanket",
     "Side Table",
-    "Table Lamp",
     "Desk Lamp",
     "Floor Lamp",
     "Mirror",
@@ -217,13 +212,10 @@ BEDROOM_CLASSES: tuple[str, ...] = (
     "Shelf",
     "Rug",
     "Curtain",
-    "Curtain Rod",
     "Chair",
     "Table",
-    "Books",
     "Picture Frame",
     "Wall Art",
-    "Decor",
     "Plant",
     "Planter",
     "Organizer Storage",
@@ -253,14 +245,11 @@ EXTRA_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
     "Bench/Ottoman": ("bench",),
     "Cabinet": ("dresser", "kitchen cabinet", "cupboard", "kitchen counter"),
     "Chair": ("dining chair",),
-    "Clock": ("wall clock",),
-    "Decor": ("statue", "globe"),
     "Entertainment Center": ("entertainment center",),
     "Fan": ("ceiling fan",),
     "Light": ("light fixture",),
     "Mugs Teacups": ("tea cup",),
     "Organizer Storage": ("organizer",),
-    "Phone": ("smartphone",),
     "Pillow": ("throw pillow",),
     "Plant": ("potted plant",),
     "Planter": ("flower pot",),
@@ -270,7 +259,6 @@ EXTRA_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
     "Shelf": ("bookshelf",),
     "Sofa": ("couch",),
     "Speaker": ("soundbar",),
-    "Stool": ("bar stool",),
     "TV": ("television", "monitor"),
     "Table": ("table",),
     "Tableware": ("bowl", "serving tray"),
@@ -545,8 +533,8 @@ class Detector:
         )
 
     def check_classes(self, expected: list[str]) -> None:
-        """Bộ class của detector (cùng các class đã gộp) phải bao phủ đầy đủ ma trận."""
-        actual = set(self.class_names) | set(MERGED_CLASSES.keys())
+        """Bộ class của detector (cùng các class đã gộp/lược bỏ) phải bao phủ đầy đủ ma trận."""
+        actual = set(self.class_names) | set(MERGED_CLASSES.keys()) | set(PRUNED_MATRIX_CLASSES)
         missing = sorted(set(expected) - actual)
         if missing:
             raise ArtifactError(

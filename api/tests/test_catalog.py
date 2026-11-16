@@ -175,19 +175,22 @@ def test_matrix_loads() -> None:
 
 
 def test_checkpoint_classes_match_matrix() -> None:
-    """Bộ class của Grounding DINO (`CLASS_PROMPTS` + `MERGED_CLASSES`) phải bao phủ toàn bộ class ma trận."""
+    """Bộ class của Grounding DINO (`CLASS_PROMPTS` + `MERGED_CLASSES` + `PRUNED_MATRIX_CLASSES`) phải bao phủ toàn bộ class ma trận."""
     from app.services.detector import (
         BEDROOM_CLASSES,
         CLASS_PROMPTS,
         KITCHEN_CLASSES,
         LIVING_ROOM_CLASSES,
         MERGED_CLASSES,
+        PRUNED_MATRIX_CLASSES,
         ROOM_CLASSES,
         normalize_label,
     )
 
     cooc = load_cooccurrence(MATRIX_PATH)
-    assert set(cooc["classes"]).issubset(set(CLASS_PROMPTS.keys()) | set(MERGED_CLASSES.keys()))
+    assert set(cooc["classes"]).issubset(
+        set(CLASS_PROMPTS.keys()) | set(MERGED_CLASSES.keys()) | set(PRUNED_MATRIX_CLASSES)
+    )
     for canonical, phrases in CLASS_PROMPTS.items():
         assert normalize_label(canonical) == canonical
         for phrase in phrases:

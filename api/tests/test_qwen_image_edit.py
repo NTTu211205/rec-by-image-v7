@@ -185,7 +185,7 @@ def test_qwen_mount_products_to_room_success() -> None:
             assert payload["images"][1] == "https://cdn.example.com/tv.jpg"
             assert payload["images"][2] == "https://cdn.example.com/speaker.jpg"
             assert payload["size"] == "736x512"
-            assert payload["steps"] == 6
+            assert payload["steps"] == 4
             assert payload["cfg"] == 1.0
             assert mock_post.call_args.args[0].endswith("/v1/images/edits")
 
