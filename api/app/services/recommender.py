@@ -47,7 +47,7 @@ GROUP_TO_DETECTOR: dict[str, str] = {
     "projector": "TV",
     "speaker": "Speaker",
     "karaoke_speaker": "Speaker",
-    "monitor": "Monitor",
+    "monitor": "TV",
     "laptop": "Laptop",
     "desktop_pc": "Laptop",
     "game_console": "Entertainment Center",
@@ -77,7 +77,7 @@ COOCCURRENCE_WEIGHTS: dict[str, float] = {
 
 # Detector -> nhóm cần loại khỏi gợi ý vì đã có trong ảnh (Cell 10.2).
 DETECTOR_TO_GROUP: dict[str, list[str]] = {
-    "TV": ["tv", "projector"],
+    "TV": ["tv", "projector", "monitor"],
     "Laptop": ["laptop", "desktop_pc"],
     "Monitor": ["monitor"],
     "Air Conditioner": ["air_conditioner"],
@@ -145,7 +145,6 @@ ROOM_LABEL_WEIGHTS: dict[str, dict[str, float]] = {
     "Speaker": {"living_room": 1.2},
     "Fireplace": {"living_room": 2.5},
     "Laptop": {"bedroom": 0.5},
-    "Monitor": {"bedroom": 0.4},
     "Printer": {"bedroom": 0.3},
     "Desk Lamp": {"bedroom": 0.5},
     "Tableware": {"kitchen": 1.0},

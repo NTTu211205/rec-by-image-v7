@@ -25,102 +25,101 @@ logger = logging.getLogger("app.detector")
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_TEXT_THRESHOLD = 0.25
-# 66 classes chia thành 2 chunks (33 classes/chunk) giúp giảm số lượt forward pass
-# từ 3 xuống 2 lượt, tiết kiệm ~33% thời gian inference Grounding DINO trên CPU
-# trong khi token count mỗi chunk (< 240 tokens) vẫn đảm bảo an toàn tuyệt đối với BERT (< 256).
-DEFAULT_CHUNK_SIZE = 33
+# Toàn bộ 62 classes sau khi gộp từ đồng nghĩa chỉ chiếm ~170 BERT tokens (< 256),
+# nằm gọn trong 1 chunk duy nhất, giúp giảm 50% số lượt forward pass trên CPU.
+DEFAULT_CHUNK_SIZE = 64
+CROSS_CHUNK_IOU_THRESHOLD = 0.65
+ANCHOR_CONFIDENCE_FLOOR = 0.42
+ANCHOR_CLASSES: frozenset[str] = frozenset({
+    "Bed",
+    "Sofa",
+    "Refrigerator",
+    "Gas Stove",
+    "Electric Cooktop",
+    "Range Hood",
+})
+
+# Các class đã được gộp thẳng vào class chuẩn khác (Monitor -> TV;
+# Induction Cooker / Infrared Cooker -> Electric Cooktop).
+MERGED_CLASSES: dict[str, str] = {
+    "Monitor": "TV",
+    "Induction Cooker": "Electric Cooktop",
+    "Infrared Cooker": "Electric Cooktop",
+}
 
 # ---------------------------------------------------------------------------
-# Ánh xạ class chuẩn của detector -> cụm từ prompt tiếng Anh cho Grounding DINO.
-# Bao gồm:
-# 1) 45 class nội thất chuẩn (khớp 1-1 ma trận đồng xuất hiện `cooccurrence_matrix.json`).
-# 2) Các nhóm danh mục chuyên dụng và tiện ích cho Nhà bếp (Kitchen).
-# Các class gộp hoặc chứa dấu `/` (như `Basket/Bin`, `Bench/Ottoman`, `Mugs Teacups`...)
-# được tách thành các danh từ tự nhiên để BERT text encoder của Grounding DINO bắt chính xác,
-# sau đó kết quả được quy đổi ngược về đúng tên chuẩn.
+# Ánh xạ class chuẩn của detector -> cụm từ prompt tiếng Anh rút gọn cho Grounding DINO.
+# Mỗi class chỉ giữ 1–2 cụm từ đại diện ngắn gọn nhất để toàn bộ prompt nằm trong
+# 1 lượt forward pass (< 256 tokens BERT); các từ đồng nghĩa mở rộng được đặt ở
+# `EXTRA_LABEL_ALIASES` để `normalize_label` vẫn quy đổi đầy đủ.
 # ---------------------------------------------------------------------------
 CLASS_PROMPTS: dict[str, tuple[str, ...]] = {
-    # --- 45 class nội thất cơ bản (COCO indoor / Matrix) ---
-    "Accent Chair": ("accent chair", "armchair"),
+    # --- 44 class nội thất cơ bản (Monitor đã gộp vào TV) ---
+    "Accent Chair": ("armchair",),
     "Air Conditioner": ("air conditioner",),
-    "Basket/Bin": ("basket", "storage bin", "trash bin", "trash can", "garbage can"),
-    "Bed": ("bed", "bed frame", "headboard"),
-    "Bench/Ottoman": ("bench", "ottoman"),
+    "Basket/Bin": ("trash bin", "basket"),
+    "Bed": ("bed",),
+    "Bench/Ottoman": ("ottoman",),
     "Books": ("books",),
-    "Cabinet": ("cabinet", "dresser", "kitchen cabinet", "cupboard", "kitchen counter"),
+    "Cabinet": ("cabinet",),
     "Candle": ("candle",),
-    "Chair": ("chair", "dining chair"),
-    "Clock": ("clock", "wall clock"),
+    "Chair": ("chair",),
+    "Clock": ("clock",),
     "Coffee Table": ("coffee table",),
     "Curtain": ("curtain",),
     "Curtain Rod": ("curtain rod",),
-    "Decor": ("statue", "globe", "decor"),
+    "Decor": ("decor",),
     "Desk Lamp": ("desk lamp",),
-    "Entertainment Center": ("tv stand", "entertainment center"),
-    "Fan": ("fan", "ceiling fan"),
+    "Entertainment Center": ("tv stand",),
+    "Fan": ("fan",),
     "Fireplace": ("fireplace",),
     "Floor Lamp": ("floor lamp",),
     "Laptop": ("laptop",),
-    "Light": ("ceiling light", "light fixture"),
+    "Light": ("ceiling light",),
     "Mirror": ("mirror",),
-    "Monitor": ("monitor",),
-    "Mugs Teacups": ("mug", "tea cup"),
-    "Organizer Storage": ("storage box", "organizer"),
-    "Phone": ("phone", "smartphone"),
+    "Mugs Teacups": ("mug",),
+    "Organizer Storage": ("storage box",),
+    "Phone": ("phone",),
     "Picture Frame": ("picture frame",),
-    "Pillow": ("pillow", "throw pillow"),
-    "Plant": ("potted plant", "plant"),
-    "Planter": ("flower pot", "planter"),
-    "Power Surge Protector": ("power strip", "surge protector"),
+    "Pillow": ("pillow",),
+    "Plant": ("plant",),
+    "Planter": ("planter",),
+    "Power Surge Protector": ("power strip",),
     "Printer": ("printer",),
-    "Remote": ("remote control", "remote"),
-    "Rug": ("rug", "carpet"),
-    "Shelf": ("shelf", "bookshelf"),
-    "Side Table": ("side table", "nightstand"),
-    "Sofa": ("sofa", "couch"),
-    "Speaker": ("speaker", "soundbar"),
-    "Stool": ("stool", "bar stool"),
-    "TV": ("tv", "television"),
-    "Table": ("dining table", "table"),
+    "Remote": ("remote",),
+    "Rug": ("rug",),
+    "Shelf": ("shelf",),
+    "Side Table": ("nightstand", "side table"),
+    "Sofa": ("sofa",),
+    "Speaker": ("speaker",),
+    "Stool": ("stool",),
+    "TV": ("tv", "monitor"),
+    "Table": ("dining table",),
     "Table Lamp": ("table lamp",),
-    "Tableware": ("bowl", "serving tray", "tableware"),
-    "Throw Blanket": ("throw blanket", "blanket"),
+    "Tableware": ("tableware",),
+    "Throw Blanket": ("blanket",),
     "Vase": ("vase",),
-    "Wall Art": ("wall art", "painting"),
+    "Wall Art": ("wall art",),
 
-    # --- Danh mục thiết bị & gia dụng Nhà bếp (Kitchen Categories) ---
-    "Refrigerator": ("refrigerator", "fridge"),
-    "Freezer": ("freezer", "chest freezer"),
-    "Beverage Cooler": ("beverage cooler", "drink cooler", "wine cooler"),
-    "Gas Stove": ("gas stove", "gas cooker", "gas range"),
-    "Induction Cooker": ("induction cooker", "induction stove", "cooktop"),
-    "Infrared Cooker": ("infrared cooker", "infrared stove"),
-    # Nhãn tổng quát cho bếp điện mặt kính/âm bàn khi ảnh không thể hiện rõ
-    # công nghệ induction hay infrared. Các cụm cụ thể giúp Grounding DINO bắt
-    # được cả bếp đơn đặt phẳng trên mặt bàn như ảnh nội thất thực tế.
-    "Electric Cooktop": (
-        "electric cooktop",
-        "electric stove",
-        "electric hob",
-        "built-in electric cooktop",
-        "glass ceramic cooktop",
-        "ceramic hob",
-        "electric hot plate",
-        "single burner electric cooktop",
-    ),
-    "Microwave": ("microwave", "microwave oven"),
-    "Oven": ("oven", "electric oven"),
-    "Range Hood": ("range hood", "kitchen hood", "exhaust hood"),
+    # --- 18 Danh mục thiết bị & gia dụng Nhà bếp (gộp bếp điện vào Electric Cooktop) ---
+    "Refrigerator": ("refrigerator",),
+    "Freezer": ("freezer",),
+    "Beverage Cooler": ("beverage cooler", "wine cooler"),
+    "Gas Stove": ("gas stove",),
+    "Electric Cooktop": ("electric cooktop", "induction stove"),
+    "Microwave": ("microwave",),
+    "Oven": ("oven",),
+    "Range Hood": ("range hood",),
     "Dishwasher": ("dishwasher",),
     "Rice Cooker": ("rice cooker",),
     "Air Fryer": ("air fryer",),
-    "Kettle": ("electric kettle", "kettle", "water kettle"),
-    "Blender": ("blender", "smoothie maker"),
-    "Juicer": ("juicer", "fruit juicer"),
-    "Soy Milk Maker": ("soy milk maker", "nut milk maker"),
-    "Coffee Maker": ("coffee maker", "coffee machine", "espresso machine"),
-    "Water Purifier": ("water purifier", "water filter"),
-    "Water Dispenser": ("water dispenser", "water cooler"),
+    "Kettle": ("kettle",),
+    "Blender": ("blender",),
+    "Juicer": ("juicer",),
+    "Soy Milk Maker": ("soy milk maker",),
+    "Coffee Maker": ("coffee maker",),
+    "Water Purifier": ("water purifier",),
+    "Water Dispenser": ("water dispenser",),
 }
 
 # ---------------------------------------------------------------------------
@@ -152,7 +151,6 @@ LIVING_ROOM_CLASSES: tuple[str, ...] = (
     "Laptop",
     "Light",
     "Mirror",
-    "Monitor",
     "Mugs Teacups",
     "Organizer Storage",
     "Phone",
@@ -189,8 +187,6 @@ KITCHEN_CLASSES: tuple[str, ...] = (
     "Freezer",
     "Beverage Cooler",
     "Gas Stove",
-    "Induction Cooker",
-    "Infrared Cooker",
     "Electric Cooktop",
     "Microwave",
     "Oven",
@@ -205,25 +201,6 @@ KITCHEN_CLASSES: tuple[str, ...] = (
     "Coffee Maker",
     "Water Purifier",
     "Water Dispenser",
-    # Đồ dùng, nội thất & tiện ích phòng bếp / ăn
-    # "Cabinet",
-    # "Table",
-    # "Chair",
-    # "Stool",
-    # "Tableware",
-    # "Mugs Teacups",
-    # "Shelf",
-    # "Basket/Bin",
-    # "Organizer Storage",
-    # "Light",
-    # "Fan",
-    # "Air Conditioner",
-    # "Clock",
-    # "Power Surge Protector",
-    # "Plant",
-    # "Planter",
-    # "Curtain",
-    # "Wall Art",
 )
 
 BEDROOM_CLASSES: tuple[str, ...] = (
@@ -251,7 +228,7 @@ BEDROOM_CLASSES: tuple[str, ...] = (
     "Planter",
     "Organizer Storage",
     "Laptop",
-    "Monitor",
+    "TV",
     "Air Conditioner",
     "Fan",
     "Light",
@@ -269,6 +246,81 @@ def _clean_text(text: str) -> str:
     return " ".join(cleaned.split())
 
 
+EXTRA_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
+    "Accent Chair": ("accent chair",),
+    "Basket/Bin": ("storage bin", "trash can", "garbage can"),
+    "Bed": ("bed frame", "headboard"),
+    "Bench/Ottoman": ("bench",),
+    "Cabinet": ("dresser", "kitchen cabinet", "cupboard", "kitchen counter"),
+    "Chair": ("dining chair",),
+    "Clock": ("wall clock",),
+    "Decor": ("statue", "globe"),
+    "Entertainment Center": ("entertainment center",),
+    "Fan": ("ceiling fan",),
+    "Light": ("light fixture",),
+    "Mugs Teacups": ("tea cup",),
+    "Organizer Storage": ("organizer",),
+    "Phone": ("smartphone",),
+    "Pillow": ("throw pillow",),
+    "Plant": ("potted plant",),
+    "Planter": ("flower pot",),
+    "Power Surge Protector": ("surge protector",),
+    "Remote": ("remote control",),
+    "Rug": ("carpet",),
+    "Shelf": ("bookshelf",),
+    "Sofa": ("couch",),
+    "Speaker": ("soundbar",),
+    "Stool": ("bar stool",),
+    "TV": ("television", "monitor"),
+    "Table": ("table",),
+    "Tableware": ("bowl", "serving tray"),
+    "Throw Blanket": ("throw blanket",),
+    "Wall Art": ("painting",),
+    "Refrigerator": ("fridge",),
+    "Freezer": ("chest freezer",),
+    "Beverage Cooler": ("drink cooler",),
+    "Gas Stove": ("gas cooker", "gas range"),
+    "Electric Cooktop": (
+        "induction cooker",
+        "infrared cooker",
+        "infrared stove",
+        "cooktop",
+        "electric stove",
+        "electric hob",
+        "built-in electric cooktop",
+        "glass ceramic cooktop",
+        "ceramic hob",
+        "electric hot plate",
+        "single burner electric cooktop",
+    ),
+    "Microwave": ("microwave oven",),
+    "Oven": ("electric oven",),
+    "Range Hood": ("kitchen hood", "exhaust hood"),
+    "Kettle": ("electric kettle", "water kettle"),
+    "Blender": ("smoothie maker",),
+    "Juicer": ("fruit juicer",),
+    "Soy Milk Maker": ("nut milk maker",),
+    "Coffee Maker": ("coffee machine", "espresso machine"),
+    "Water Purifier": ("water filter",),
+    "Water Dispenser": ("water cooler",),
+}
+
+
+def _box_iou(box_a: list[float] | tuple[float, ...], box_b: list[float] | tuple[float, ...]) -> float:
+    """Tính IoU giữa 2 bounding box [x1, y1, x2, y2]."""
+    ix1 = max(box_a[0], box_b[0])
+    iy1 = max(box_a[1], box_b[1])
+    ix2 = min(box_a[2], box_b[2])
+    iy2 = min(box_a[3], box_b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, box_a[2] - box_a[0]) * max(0.0, box_a[3] - box_a[1])
+    area_b = max(0.0, box_b[2] - box_b[0]) * max(0.0, box_b[3] - box_b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0.0 else 0.0
+
+
 def _build_lookup() -> tuple[dict[str, str], list[tuple[str, str]]]:
     exact: dict[str, str] = {}
     for canonical, phrases in CLASS_PROMPTS.items():
@@ -277,6 +329,13 @@ def _build_lookup() -> tuple[dict[str, str], list[tuple[str, str]]]:
         for phrase in phrases:
             exact[phrase.lower()] = canonical
             exact[_clean_text(phrase)] = canonical
+    for merged_src, merged_target in MERGED_CLASSES.items():
+        exact[merged_src.lower()] = merged_target
+        exact[_clean_text(merged_src)] = merged_target
+    for canonical, aliases in EXTRA_LABEL_ALIASES.items():
+        for alias in aliases:
+            exact[alias.lower()] = canonical
+            exact[_clean_text(alias)] = canonical
 
     # Sắp xếp cụm từ dài trước để khi Grounding DINO ghép nhiều token
     # (vd: "coffee table", "accent chair", "floor lamp", "curtain rod")
@@ -439,8 +498,8 @@ class Detector:
         )
 
     def check_classes(self, expected: list[str]) -> None:
-        """Bộ class của detector phải bao phủ đầy đủ ma trận đồng xuất hiện."""
-        actual = set(self.class_names)
+        """Bộ class của detector (cùng các class đã gộp) phải bao phủ đầy đủ ma trận."""
+        actual = set(self.class_names) | set(MERGED_CLASSES.keys())
         missing = sorted(set(expected) - actual)
         if missing:
             raise ArtifactError(
@@ -483,8 +542,12 @@ class Detector:
         import torch
 
         prepared_image = self._prepare_image(img)
-        text_thresh = min(self.text_threshold, float(confidence))
-        best: dict[str, dict] = {}
+        req_conf = float(confidence)
+        # Với vật thể neo phòng diện tích lớn (Bed, Sofa, Refrigerator...),
+        # cho phép ngưỡng sàn 0.42 khi caller truyền confidence=0.50 để tránh rớt sát nút.
+        query_thresh = min(req_conf, ANCHOR_CONFIDENCE_FLOOR) if req_conf < 0.90 else req_conf
+        text_thresh = max(self.text_threshold, query_thresh - 0.05) if req_conf < 0.90 else min(self.text_threshold, req_conf)
+        candidates: list[dict] = []
 
         # Khi caller không chỉ định phòng, dùng prompt `default` gồm toàn bộ
         # CLASS_PROMPTS. Room cụ thể chỉ giới hạn nhãn khi nó được gửi rõ ràng.
@@ -514,9 +577,9 @@ class Detector:
                     "target_sizes": [(prepared_image.height, prepared_image.width)],
                 }
                 if self._post_process_uses_threshold:
-                    post_kwargs["threshold"] = float(confidence)
+                    post_kwargs["threshold"] = query_thresh
                 else:
-                    post_kwargs["box_threshold"] = float(confidence)
+                    post_kwargs["box_threshold"] = query_thresh
 
                 results = self._processor.post_process_grounded_object_detection(**post_kwargs)
                 result = results[0]
@@ -524,14 +587,50 @@ class Detector:
                 if raw_labels is None:
                     raw_labels = result.get("labels", [])
                 scores = result.get("scores", [])
+                boxes = result.get("boxes", [])
 
-                for raw_label, score in zip(raw_labels, scores):
+                for box_idx, (raw_label, score) in enumerate(zip(raw_labels, scores)):
                     cls_name = normalize_label(str(raw_label))
                     if cls_name is None:
                         continue
                     conf = float(score.item() if hasattr(score, "item") else score)
-                    if cls_name not in best or conf > best[cls_name]["confidence"]:
-                        best[cls_name] = {"label": cls_name, "confidence": conf}
+                    min_needed = query_thresh if cls_name in ANCHOR_CLASSES else req_conf
+                    if conf < min_needed:
+                        continue
+                    raw_box = boxes[box_idx] if box_idx < len(boxes) else None
+                    if raw_box is not None:
+                        box_coords = [
+                            float(x.item() if hasattr(x, "item") else x)
+                            for x in raw_box
+                        ]
+                    else:
+                        box_coords = None
+                    candidates.append({
+                        "label": cls_name,
+                        "confidence": conf,
+                        "box": box_coords,
+                    })
+
+        # Cross-chunk Box NMS: nếu cùng một vật thể (IoU >= 0.65) bị gắn 2 nhãn
+        # khác nhau ở 2 chunks (vd: Air Conditioner 0.85 ở chunk 1 và Air Fryer 0.58
+        # ở chunk 2), chỉ giữ lại nhãn có confidence cao hơn.
+        candidates.sort(key=lambda item: item["confidence"], reverse=True)
+        kept_boxes: list[dict] = []
+        best: dict[str, dict] = {}
+        for cand in candidates:
+            cand_box = cand["box"]
+            if cand_box is not None and any(
+                kb["box"] is not None
+                and kb["label"] != cand["label"]
+                and _box_iou(cand_box, kb["box"]) >= CROSS_CHUNK_IOU_THRESHOLD
+                for kb in kept_boxes
+            ):
+                continue
+            kept_boxes.append(cand)
+            cls_name = cand["label"]
+            conf = cand["confidence"]
+            if cls_name not in best or conf > best[cls_name]["confidence"]:
+                best[cls_name] = {"label": cls_name, "confidence": conf}
 
         detected = list(best.values())
         if detected:
